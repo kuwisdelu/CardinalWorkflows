@@ -70,7 +70,7 @@ image(pig206, mz=256)
 \centering
 \begin{subfigure}{.3\textwidth}
   \centering
-\includegraphics{pig206-optical.pdf}
+\includegraphics{pig206-optical.png}
 \caption{\small H\&E}
 \label{fig:optical}
 \end{subfigure}
