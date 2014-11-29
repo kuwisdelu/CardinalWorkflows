@@ -1,0 +1,329 @@
+
+%\VignetteIndexEntry{Classification example workflow}
+%\VignetteKeyword{ExperimentData, MassSpectrometryData, ImagingMassSpectrometry, Classification}
+
+\documentclass[a4paper]{article}
+\usepackage{caption}
+\usepackage{subcaption}
+
+\def\todo#1{{\color{red}[TODO: #1]}}
+\def\note#1{{\color{red}[From OV to everyone: #1]}}
+\def\forKyle#1{{\color{blue}[4Kyle: #1]}}
+\def\fromKyle#1{{\color{green}[From Kyle: #1]}}
+\def\forApril#1{{\color{cyan}[4April: #1]}}
+\def\fromApril#1{{\color{magenta}[From April: #1]}}
+
+\def\figref#1{{Figure~\ref{fig:#1}}}
+\def\secref#1{{Section~\ref{sec:#1}}}
+
+<<style, eval=TRUE, echo=FALSE, results=tex>>=
+BiocStyle::latex()
+@
+
+\title{Supervised analysis of MS images using Cardinal}
+
+\author{Kyle D. Bemis and April Harry}
+
+\begin{document}
+\SweaveOpts{concordance=TRUE, keep.source=FALSE, cache=FALSE}
+% Set cache = FALSE when making big change or when done
+
+\maketitle
+
+\tableofcontents
+
+<<eval=TRUE, echo=FALSE, results=hide>>=
+library(Cardinal)
+options(Cardinal.verbose=FALSE)
+options(Cardinal.progress=FALSE)
+options(width=80)
+@
+
+\section{Introduction}
+
+For experiments in which analyzed samples come from different classes or conditions, a common goal in analysis is to predict the class of a new sample, given a labeled training set for which sample classes is known. This task is called classification. \Rpackage{Cardinal} implements a variety of classification methods for mass spectrometry imaging experiments.
+
+\section{Analysis of a renal cell carcinoma (RCC) cancer dataset}
+
+<<eval=TRUE>>=
+library(CardinalWorkflows)
+data(rcc, rcc_analyses)
+@
+
+\forKyle{Discuss renal cell carcinoma (RCC) dataset.}
+
+\subsection{Pre-processing}
+
+\todo{Mention why peak-picking is not done.}
+
+We begin by pre-processing the data. \forKyle{for more information on preprocessing methods, see...}The spectra are first normalized to total ion current. 
+
+<<eval=FALSE>>=
+rcc.norm <- normalize(rcc, method="tic")
+@
+
+The normalized data is then resampled to unit resolution. 
+
+<<eval=FALSE>>=
+rcc.resample <- reduceDimension(rcc.norm, method="resample")
+@
+
+\subsection{Visualizing the dataset}
+
+\subsubsection{Visualization of single-ion images}
+
+We can plot the diagnosis from pathology for three tissue samples in Figure \ref{fig:ionimages}A. \forKyle{In the code below, where does \textit{diagnosis} come from?} We color cancerous tissue red, while normal tissue is colored blue.
+
+<<ion_image_diagnosis, eval=FALSE>>=
+image(rcc.resample, formula=diagnosis ~ x * y,
+	subset=sample %in% c("UH9610_15", "UH9812_03", "UH9912_01"),
+	col.regions=c("red", "blue"), colorkey=FALSE, layout=c(3,1))
+
+legend("topright", legend=c("cancer", "normal"), fill=c("red", "blue"))
+@
+
+
+\forKyle{IS THIS TRUE: In order to display normal tissue in Figure \ref{fig:ionimages}B, we plot the single ion image of $m/z 215$, an ion known to be more abundant in normal tissue than cancer.}
+
+<<ion_image_normal, eval=FALSE>>=
+image(rcc.resample, mz=215, subset=sample %in% c("UH9610_15", "UH9812_03",
+	"UH9912_01"), contrast.enhance="histogram", smooth.image="gaussian",
+	layout=c(3,1))
+@
+
+\forKyle{IS THIS TRUE: Likewise for cancer tissue in Figure \ref{fig:ionimages}C, we plot the single ion image of $m/z 886$, an ion known to be more abundant in cancer than normal.}
+
+<<ion_image_cancer, eval=FALSE>>=
+image(rcc.resample, mz=886, subset=sample %in% c("UH9610_15", "UH9812_03",
+	"UH9912_01"), contrast.enhance="histogram", smooth.image="gaussian",
+	layout=c(3,1))
+@
+
+\begin{figure}
+\setkeys{Gin}{width=0.9\textwidth}
+\begin{center}
+A \\
+<<fig=TRUE, echo=FALSE, width=9, height=3>>=
+<<ion_image_diagnosis>>
+@
+B \\
+<<fig=TRUE, echo=FALSE, width=9, height=3>>=
+<<ion_image_normal>>
+@
+C \\
+<<fig=TRUE, echo=FALSE, width=9, height=3>>=
+<<ion_image_cancer>>
+@
+\\
+\caption{\small (A) Diagnosis as determined by histopathology. (B) Ion image a $m/z$ 215 showing normal healthy tissue. (C) Ion image at $m/z$ 886 showing cancer tissue. }
+\label{fig:ionimages}
+\end{center}
+\end{figure}
+
+\subsubsection{Exploratory analysis using PCA}
+
+We perform Principal Component Analysis on the data.
+<<eval=FALSE>>=
+rcc.pca <- PCA(rcc.resample, ncomp=5)
+@
+
+Scores at each pixel for the first three components are displayed in Figure \ref{fig:pcaimages}A. \forKyle{provide some interpetation}
+<<pca_plot, eval=FALSE>>=
+image(rcc.pca, column=c("PC1", "PC2", "PC3"), subset=sample=="UH9610_15", superpose=FALSE, col.regions=risk.colors(100), layout=c(3,1))
+@
+
+
+We can also plot loadings for the first three components, as in Figure \ref{fig:pcaimages}B. \forKyle{provide some interpetation}
+<<pca_image, eval=FALSE>>=
+plot(rcc.pca, column=c("PC1", "PC2", "PC3"), superpose=FALSE, layout=c(3,1))
+@
+
+\begin{figure}
+\setkeys{Gin}{width=0.9\textwidth}
+\begin{center}
+A \\
+<<fig=TRUE, echo=FALSE, width=9, height=3>>=
+<<pca_plot>>
+@
+\\
+<<fig=TRUE, echo=FALSE, width=9, height=3>>=
+<<pca_image>>
+@
+\\
+\caption{\small (A) Images of the PCA scores for the first three principal components. (B) Plot of the PCA loadings for the first three principal components.}
+\label{fig:pcaimages}
+\end{center}
+\end{figure}
+
+\subsection{Classification using PLS-DA}
+
+We use cross-validation to find best number of components in partial least squares discriminant analysis.
+
+<<eval=FALSE>>=
+rcc.cv.pls <- cvApply(rcc.resample, .y=rcc.resample$diagnosis, .fun="PLS",
+	ncomp=4:12)
+@
+
+Check the cross-validated accuracy.
+
+<<pls_accuracy, eval=FALSE>>=
+rcc.acc <- data.frame(ncomp=4:12,
+	Accuracy=sapply(summary(rcc.cv.pls)$accuracy,
+		function(x) x[1,1]))
+
+plot(Accuracy ~ ncomp, data=rcc.acc, type='b', xlab="Number of Components")
+abline(v=10, col="red", lty=2)
+@
+
+\begin{figure}
+\setkeys{Gin}{width=0.3\textwidth}
+\begin{center}
+<<fig=TRUE, echo=FALSE>>=
+<<pls_accuracy>>
+@
+\caption{\small Accuracy of PLS classification for number of components used.}
+\label{fig:plsaccuracy}
+\end{center}
+\end{figure}
+
+Use 10 PLS components.
+
+<<eval=FALSE>>=
+rcc.pls <- PLS(rcc.resample, y=rcc.resample$diagnosis, ncomp=10)
+@
+
+\subsubsection{Plotting the classified images}
+
+Plot the fitted values.
+
+<<pls_images, eval=FALSE>>=
+image(rcc.pls, subset=sample %in% c("UH9610_15", "UH9812_03", "UH9912_01"),
+	layout=c(3,1))
+@
+
+\begin{figure}
+\setkeys{Gin}{width=0.9\textwidth}
+\begin{center}
+<<fig=TRUE, echo=FALSE, width=9, height=3>>=
+<<pls_images>>
+@
+\caption{\small Plot of the fitted values indicating cancer or normal tissue.}
+\label{fig:plsimages}
+\end{center}
+\end{figure}
+
+\subsubsection{Plotting the coefficients of $m/z$ values}
+
+<<pls_coefplot, eval=FALSE>>=
+plot(rcc.pls)
+@
+
+<<pls_loadingplot, eval=FALSE>>=
+plot(rcc.pls, mode="loadings")
+@
+
+<<pls_weightplot, eval=FALSE>>=
+plot(rcc.pls, mode="weights")
+@
+
+\begin{figure}
+\setkeys{Gin}{width=0.3\textwidth}
+\begin{center}
+\begin{tabular}{ccc}
+<<fig=TRUE, echo=FALSE>>=
+<<pls_coefplot>>
+@
+&
+<<fig=TRUE, echo=FALSE>>=
+<<pls_loadingplot>>
+@
+&
+<<fig=TRUE, echo=FALSE>>=
+<<pls_weightplot>>
+@
+\\
+\end{tabular}
+\caption{\small (A) Plot of PLS coefficients. (B) Plot of PLS loadings. (C) Plot of PLS weights.}
+\label{fig:plsplots}
+\end{center}
+\end{figure}
+
+\subsection{Classification using O-PLS-DA}
+
+Comparable accuracy with improved interpretability with orthogonal partial least squares discriminant analysis.
+
+<<eval=FALSE>>=
+rcc.opls <- OPLS(rcc.resample, y=rcc.resample$diagnosis, ncomp=10,
+	keep.Xnew=FALSE)
+@
+
+<<opls_images, eval=FALSE>>=
+image(rcc.opls, subset=sample %in% c("UH9610_15", "UH9812_03", "UH9912_01"),
+	layout=c(3,1))
+@
+
+\begin{figure}
+\setkeys{Gin}{width=0.9\textwidth}
+\begin{center}
+<<fig=TRUE, echo=FALSE, width=9, height=3>>=
+<<opls_images>>
+@
+\caption{\small Plot of the fitted values indicating cancer or normal tissue.}
+\label{fig:oplsimages}
+\end{center}
+\end{figure}
+
+Show that the coefficients are more stable and interpretable.
+
+<<opls_coefplot, eval=FALSE>>=
+plot(rcc.opls)
+@
+
+<<opls_loadingplot, eval=FALSE>>=
+plot(rcc.opls, mode="loadings")
+@
+
+<<opls_weightplot, eval=FALSE>>=
+plot(rcc.opls, mode="weights")
+@
+
+\begin{figure}
+\setkeys{Gin}{width=0.3\textwidth}
+\begin{center}
+\begin{tabular}{ccc}
+<<fig=TRUE, echo=FALSE>>=
+<<opls_coefplot>>
+@
+&
+<<fig=TRUE, echo=FALSE>>=
+<<opls_loadingplot>>
+@
+&
+<<fig=TRUE, echo=FALSE>>=
+<<opls_weightplot>>
+@
+\\
+\end{tabular}
+\caption{\small (A) Plot of O-PLS coefficients. (B) Plot of O-PLS loadings. (C) Plot of O-PLS weights.}
+\label{fig:oplsplots}
+\end{center}
+\end{figure}
+
+\section{Session info}
+
+% <<eval=FALSE, echo=FALSE>>=
+% save(rcc, rcc.resample, file="~/Documents/Developer/Projects/CardinalWorkflows/data/rcc.rda", compress="xz")
+% save(rcc.pca, rcc.cv.pls, rcc.pls, rcc.opls, file="~/Documents/Developer/Projects/CardinalWorkflows/data/rcc_analyses.rda", compress="xz")
+% @
+
+
+
+
+<<results=tex, echo=FALSE>>=
+toLatex(sessionInfo())
+@
+
+% \bibliographystyle{unsrt}
+% \bibliography{CardinalWorkflows}
+
+\end{document}

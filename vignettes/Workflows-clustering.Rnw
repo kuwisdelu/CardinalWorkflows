@@ -1,0 +1,980 @@
+
+%\VignetteIndexEntry{Clustering example workflow}
+%\VignetteKeyword{ExperimentData, MassSpectrometryData, ImagingMassSpectrometry, Clustering}
+
+\documentclass[a4paper]{article}
+\usepackage{caption}
+\usepackage{subcaption}
+
+\def\todo#1{{\color{red}[TODO: #1]}}
+\def\note#1{{\color{red}[From OV to everyone: #1]}}
+\def\forKyle#1{{\color{blue}[4Kyle: #1]}}
+\def\fromKyle#1{{\color{green}[From Kyle: #1]}}
+\def\forApril#1{{\color{cyan}[4April: #1]}}
+\def\fromApril#1{{\color{magenta}[From April: #1]}}
+
+\def\figref#1{{Figure~\ref{fig:#1}}}
+\def\secref#1{{Section~\ref{sec:#1}}}
+
+<<style, eval=TRUE, echo=FALSE, results=tex>>=
+BiocStyle::latex()
+@
+
+\title{Unsupervised analysis of MS images using Cardinal}
+
+\author{Kyle D. Bemis and April Harry}
+
+\begin{document}
+\SweaveOpts{concordance=TRUE, keep.source=FALSE, cache=FALSE}
+% Set cache = FALSE when making big change or when done
+
+\maketitle
+
+\tableofcontents
+
+<<eval=TRUE, echo=FALSE, results=hide>>=
+## To save time in rebuilding the vignette,
+## most of the processing and analysis is run
+## beforehand and saved to be loaded later.
+library(Cardinal)
+options(Cardinal.verbose=FALSE)
+options(Cardinal.progress=FALSE)
+options(width=80)
+@
+
+\section{Introduction}
+
+The goal of unsupervised analysis of mass spectrometry imaging experiments is to discover the regions of the data with distinct chemical profiles, and the masses that distinguish the chemical profiles of these regions.
+
+Algorithmically, this means clustering the data. In imaging experiments, the resulting cluster configurations are called spatial segmentations, and the clusters are called segments.
+
+In this vignette, an example clustering workflow in \Rpackage{Cardinal} is shown, along with plots of results.
+
+\section{Analysis of a pig fetus wholy body cross section}
+
+This example uses the PIGII\_206 dataset: a cross section of a pig fetus captured using a Thermo LTQ instrument using desorption electrospray ionization (DESI).
+
+<<eval=TRUE>>=
+library(CardinalWorkflows)
+data(pig206, pig206_analyses)
+@
+
+The PIGII\_206 dataset is of interest for segmentation because we expect the underlying morphology of the tissue to be reflected in its chemical profile. It would be interesting, therefore, if we were able to identify abundant analytes certain physical systems such as the heart, spine, liver, or brain.
+
+<<ionimage256, eval=FALSE>>=
+image(pig206, mz=256)
+@
+
+\setkeys{Gin}{width=\textwidth}
+\begin{figure}[h]
+\centering
+\begin{subfigure}{.3\textwidth}
+  \centering
+\includegraphics{pig206-optical.pdf}
+\caption{\small H\&E}
+\label{fig:optical}
+\end{subfigure}
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<ionimage256>>
+@
+\caption{\small $m/z$ 256}
+\label{fig:ionimage256}
+\end{subfigure}
+\caption{\small Optical image and a cropped ion image for the pig fetus dataset.}
+\end{figure}
+
+<<>>=
+summary(pig206)
+@
+
+In the optical image shown in \figref{optical}, the brain (left), heart (center), and liver (large dark region below heart) can be seen. The MS dataset has been cropped to remove the background slide pixels, leaving only the tissue section itself for analysis as seen in Figure \ref{fig:ionimage256}. The image contains 4959 pixels with 10200 spectral features measured at each location (m/z range from 150 to 1000).
+
+
+
+
+
+
+
+\subsection{Pre-processing}
+
+For statistical analysis, it is necessary to perform some kind of dimension reduction on the dataset as part of the pre-processing, so that computation times are reasonable. We will use peak-picking, although dimension reduction via resampling or binning is also a possible.
+
+Note that we can perform peak-picking here for our unsupervised analysis because we do not have to worry about cross-validation as we would when performing classification (see classification workflow).
+
+
+\subsubsection{Normalization}
+
+In order to ensure that the spectra are comparable pixel-to-pixel, normalization is often done as a pre-processing step. A popular choice for normalization in mass spectrometry image analysis is total ion current (TIC) standardization.
+
+<<eval=FALSE>>=
+pig206.norm <- normalize(pig206, method="tic")
+@
+
+\subsubsection{Peak picking and alignment}
+
+\label{sec:peakpicking}
+
+
+For computational efficency, it is necessary to do peak picking prior to analysing the data. As in \cite{Alexandrov2010}, we peak pick on every $10^{th}$ mass spectrum, retaining only those peaks that occur in at least 1\% of the considered spectra. The selection of peaks in \Rpackage{Cardinal} is done using a comparison of local maxima against noise.
+
+First, we perform peak-picking on ever $10^{th}$ mass spectrum using the \verb|peakPick| method, looking for peaks with a signal-to-noise ratio (SNR) of at least 6.
+
+<<eval=FALSE>>=
+pig206.peaklist <- peakPick(pig206.norm, pixel=seq(1, ncol(pig206), by=10), method="simple", SNR=6)
+@
+
+The peaks must be aligned using \verb|peakAlign|. Below, the mean spectrum of the raw data is used as the reference, so the peaks will be aligned to the local maxima in the mean spectrum.
+
+<<eval=FALSE>>=
+pig206.peaklist <- peakAlign(pig206.peaklist, ref=pig206.norm, method="diff", units="ppm", diff.max=200)
+@
+
+Now we use the \verb|peakFilter| method to drop peaks that occur less frequently than once every 100 spectra.
+
+<<eval=FALSE>>=
+pig206.peaklist <- peakFilter(pig206.peaklist, method="freq", freq.min=ncol(pig206.peaklist) / 100)
+@
+
+Finally, \verb|reduceDimension| method is used to sweep back through the full normalized dataset retrieve the identified peaks from all of the pixels.
+
+<<eval=FALSE>>=
+pig206.peaks <- reduceDimension(pig206.norm, ref=pig206.peaklist, type="height")
+@
+
+<<>>=
+summary(pig206.peaks)
+@
+
+An alternative pre-processing workflow would be to perform peak-picking on all mass spectra and use these peaks directly (after alignment) rather than use \verb|reduceDimension|. However, this would result in 0 intensities for mass spectra where certain peaks were not found, so it places a greater burden on the accuracy of the peak detection algorithm.
+
+
+
+
+
+
+
+\subsection{Visualizing the dataset}
+
+In this section, we will walk through several methods for visualizing the dataset before statistical analysis.
+
+\subsubsection{Visualization of single-ion images}
+
+Plotting ion images is the natural first step in exploring a mass spectrometry imaging dataset.
+
+In \figref{ionimages} we show ion images for three selected peaks. These images have been contrast enhanced using histogram equalization \cite{Alexandrov:2012dy}. Further, Gaussian smoothing is used to improve visualization of the images.
+
+<<ionimage187, eval=FALSE>>=
+image(pig206, mz=187, contrast.enhance="histogram", smooth.image="gaussian")
+@
+
+<<ionimage284, eval=FALSE>>=
+image(pig206, mz=284, contrast.enhance="histogram", smooth.image="gaussian")
+@
+
+<<ionimage537, eval=FALSE>>=
+image(pig206, mz=537, contrast.enhance="histogram", smooth.image="gaussian")
+@
+
+\setkeys{Gin}{width=\textwidth}
+\begin{figure}[h]
+\centering
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<ionimage187>>
+@
+\caption{\small $m/z$ 187 (heart)}
+\label{fig:ionimage187}
+\end{subfigure}
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<ionimage284>>
+@
+\caption{\small $m/z$ 284 (brain)}
+\label{fig:ionimage284}
+\end{subfigure}
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<ionimage537>>
+@
+\caption{\small $m/z$ 537 (liver)}
+\label{fig:ionimage537}
+\end{subfigure}
+\caption{\small Ion images showing histogram equalization and Gaussian smoothing.}
+\label{fig:ionimages}
+\end{figure}
+
+These ion images show morphological features such as the heart (\figref{ionimage187}), brain (\figref{ionimage284}), and liver (\figref{ionimage537}) that an unsupervised analysis should identify in a spatial segmentation.
+
+
+\subsubsection{Exploratory analysis using PCA}
+
+Principal component analysis (PCA) is another popular method for exploring a dataset. PCA is also available in \Rpackage{Cardinal}. We now explore the peak-picked dataset using PCA with 5 components, fit below using the \verb|PCA| method.
+
+<<eval=FALSE>>=
+pig206.pca <- PCA(pig206.peaks, ncomp=5)
+@
+
+<<>>=
+summary(pig206.pca)
+@
+
+The summary statistics show that the first 5 principal components cumulatively explain approximately 85\% of the variation in the data. However, plotting the PC scores as images (as shown below in \figref{pcaimage}) shows that PCA is only somewhat helpful in visualizing the data, as the variation explained by PCA is dominated by the tissue above the spine.
+
+<<pcaimage, eval=FALSE>>=
+image(pig206.pca, column=c("PC1", "PC2", "PC3"), superpose=FALSE, col.regions=risk.colors(100), layout=c(3,1))
+@
+
+In \figref{pcaplot}, we plot the loadings for the principal components as well.
+
+
+<<pcaplot, eval=FALSE>>=
+plot(pig206.pca, column=c("PC1", "PC2", "PC3"), superpose=FALSE, layout=c(3,1))
+@
+
+\setkeys{Gin}{width=\textwidth}
+\begin{figure}[h]
+\centering
+\begin{subfigure}{0.8\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE, width=9, height=3>>=
+<<pcaimage>>
+@
+\caption{\small Images of the PCA scores}
+\label{fig:pcaimage}
+\end{subfigure}
+\begin{subfigure}{0.8\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE, width=9, height=3>>=
+<<pcaplot>>
+@
+\caption{\small Plot of the PCA loadings}
+\label{fig:pcaplot}
+\end{subfigure}
+\caption{\small Principal components analysis of PIGII\_206.}
+\end{figure}
+
+Although PCA is widely used and can be visually useful when first exploring a dataset, it is rarely informative enough to constitute a complete analysis on its own, and additional statistical analyses are usually required to obtain more meaningful results.
+
+
+
+
+
+\subsection{Spatial segmentation using spatially-aware k-means clustering}
+
+
+This section demonstrates the spatially-aware clustering presented by Alexandrov and Kobarg \cite{Alexandrov2011}, implemented in \Rpackage{Cardinal} in the \verb|spatialKMeans| method.
+
+This method uses a spatial distance function to perform dimension reduction on the mass spectra prior to clustering using ordinary k-means. The algorithm differentiates between "spatially-aware" (SA) and "spatially-aware structurally-adaptive" (SASA) clustering, which use different weights in the spatial distance function.
+
+The "SA" variant uses simple Gaussian weights, and the "SASA" variant uses adaptive weights that often better preserves edges between segments. In \Rpackage{Cardinal}, these methods are differentiated by a \Robject{method} argument which can be set to either "gaussian" or "adaptive".
+
+The parameters to be explicitly provided in the \verb|spatialKMeans| method are:
+
+\begin{itemize}
+	
+	\item $r$: The neighborhood smoothing radius
+	\item $k$: The number of segments (clusters)
+
+\end{itemize}
+
+The method is vectorized over these parameters, so multiple models can be fit simultaneously by giving them multiple values.
+
+Below, we perform SA clustering with the \verb|method="gaussian"| weights.
+
+<<eval=FALSE>>=
+set.seed(1)
+pig206.skmg <- spatialKMeans(pig206.peaks, r=c(1,2), k=c(5,10), method="gaussian")
+@
+
+<<>>=
+summary(pig206.skmg)
+@
+
+Additionally, we perform SASA clustering with the \verb|method="adaptive"| weights.
+
+<<eval= FALSE>>=
+set.seed(1)
+pig206.skma <- spatialKMeans(pig206.peaks, r=c(1,2), k=c(5,10), method="adaptive")
+@
+
+<<>>=
+summary(pig206.skma)
+@
+
+Both of the resulting objects have four sets of model parameters, in the parameter space of $r = {1,2}$ and $k = {5,10}$.
+
+
+\subsubsection{Plotting the spatial segmentation}
+
+\Rpackage{Cardinal} has the capacity to simultaneously plot segmentations for the whole set of parameters. Figure \ref{fig:skmgimage} shows the SA results (Gaussian weights), and Figure \ref{fig:skmaimage} shows the SASA results (adaptive weights).
+
+
+<<skmgimage, eval=FALSE>>=
+image(pig206.skmg, key=FALSE, layout=c(2,2))
+@
+
+<<skmaimage, eval=FALSE>>=
+image(pig206.skma, key=FALSE, layout=c(2,2))
+@
+
+
+\setkeys{Gin}{width=\textwidth}
+\begin{figure}[h]
+\centering
+\begin{subfigure}{.45\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<skmgimage>>
+@
+\caption{\small Segmentation for SA k-means clustering}
+\label{fig:skmgimage}
+\end{subfigure}
+\begin{subfigure}{.45\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<skmaimage>>
+@
+\caption{\small Segmentation for SASA k-means clustering}
+\label{fig:skmaimage}
+\end{subfigure}
+\caption{\small The spatial segmentations for spatially-aware (SA) and spatially-aware structurally-adaptive (SASA) k-means clustering with varying smoothing radii ($r = {1,2}$) and number of segments ($k = {5,10}$). Pixels with the same color indicate membership in the same segment.}
+\end{figure}
+
+\figref{skmgimage} shows the segmentations for SA clustering and \figref{skmaimage} shows the segmentations for SASA clustering.
+
+The segments are indicated by colors, and the additional colors used in the plots with $k = 10$ reflect the additional number of segments in those segmentations.
+
+The noisiness in the SASA clusterings for $r = 1$ seem to suggest that it is too small a radius for use with SASA clustering for this particular dataset. In both sets of clusterings -- particularly the SA clusterings with $k = 10$ -- we can often see distinct segments that correspond to organs such as the brain, heart, and liver.
+
+
+\subsubsection{Plotting the mean spectra of the segments}
+
+Likewise, we can also plot the mean spectra for the spatial segmentations. For each parameter set, the mean spectra for all segments are overlaid in \figref{skmgplot} for SA clustering (Gaussian weights) and \figref{skmaplot} for SASA clustering (adaptive weights).
+
+<<skmgplot, eval=FALSE>>=
+plot(pig206.skmg, key=FALSE, layout=c(2,2), type=c('p', 'h'), pch=20)
+@
+
+<<skmaplot, eval=FALSE>>=
+plot(pig206.skma, key=FALSE, layout=c(2,2), type=c('p', 'h'), pch=20)
+@
+
+\setkeys{Gin}{width=\textwidth}
+\begin{figure}[h!]
+\centering
+\begin{subfigure}{.45\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<skmgplot>>
+@
+\caption{\small Mean spectra for SA k-means clustering}
+\label{fig:skmgplot}
+\end{subfigure}
+\begin{subfigure}{.45\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<skmaplot>>
+@
+\caption{\small Mean spectra for SASA k-means clustering}
+\label{fig:skmaplot}
+\end{subfigure}
+\caption{\small The mean spectra for spatially-aware (SA) and spatially-aware structurally-adaptive (SASA) k-means clustering with varying smoothing radii ($r = {1,2}$) and number of segments ($k = {5,10}$). Colors indicate the segment from which each mean spectrum is calculated (corresponding segments can be found in \figref{skmgimage} and \figref{skmaimage}).}
+\end{figure}
+
+\figref{skmgplot} shows the mean spectra for SA clustering and \figref{skmaplot} shows mean spectra for SASA clustering.
+
+Like PCA, spatially-aware k-means clustering is useful for quickly visualizing an MS imaging dataset, but additional analysis is required for statistically-meaningful results.
+
+
+
+
+\subsection{Spatial segmentation using spatial shrunken centroids clustering}
+
+This section demonstrates the spatial shrunken centroids clustering (SSC) method for statistical analysis we introduce in \Rpackage{Cardinal} in the \verb|spatialShrunkenCentroids| method.
+
+The Gaussian and adaptive weights are retained from the spatially-aware k-means clustering \cite{Alexandrov2011}. In addition, we introduce statistical regularization as in nearest shrunken centroids to enforce feature sparsity \cite{Tibshirani2002}. This means doing feature selection, so that the analysis automatically identifies informative $m/z$ values.
+
+The parameters to be explicitly provided in the \verb|spatialShrunkenCentroids| method are:
+
+\begin{itemize}
+	
+	\item $r$: The neighborhood smoothing radius
+	\item $k$: The initial number of segments (clusters)
+	\item $s$: The shrinkage parameter
+
+\end{itemize}
+
+The $r$ parameter is the same as in \verb|spatialKMeans|. The $k$ parameter now specifies only the \textit{initial} number of segments. The \verb|spatialShrunkenCentroids| method allows the number of segments to decrease according to the data. This allows automatic selection of the number of clusters.
+
+The $s$ parameter is the shrinkage parameter that enforces sparsity. As $s$ increases, fewer mass features ($m/z$ values) will be used in the spatial segmentation, and only the informative mass features will be retained. 
+
+Typically, the number of segments will also decrease as $s$ increases. This makes sense, because as fewer mass features are used, the fewer segments they will be able to explain.
+
+For a detailed explanation of the shrinkage parameter $s$, see \cite{Tibshirani2002} and \cite{Tibshirani2003}.
+
+Now we perform spatial shrunken centroids clustering with the \verb|method="gaussian"| weights.
+
+<<eval=FALSE>>=
+set.seed(1)
+pig206.sscg <- spatialShrunkenCentroids(pig206.peaks, r=c(1,2),
+	k=c(15,20), s=c(0,3,6,9), method="gaussian")
+@
+
+<<>>=
+summary(pig206.sscg)
+@
+
+And we perform spatial shrunken centroids clustering with the \verb|method="adaptive"| weights.
+
+<<eval=FALSE>>=
+set.seed(1)
+pig206.ssca <- spatialShrunkenCentroids(pig206.peaks, r=c(1,2),
+	k=c(15,20), s=c(0,3,6,9), method="adaptive")
+@
+
+<<>>=
+summary(pig206.ssca)
+@
+
+Both of the resulting objects have sixteen sets of model parameters, in the parameter space of $r = {1,2}$, $k = {15,20}$, and $s = {0,3,6,9}$.
+
+As seen in the summaries above, many of the segmentations result in fewer numbers of segments than at initialization, and the number of segments is generally lower for higher sparsity. We will show how this can be used to determine the number of segments in \secref{numberofsegments}.
+
+
+\subsubsection{Plotting the spatial segmentations}
+
+We will plot four of the spatial segmentations for each of the Gaussian weights and adaptive weights. This is specified by the \Robject{model} argument, where we can list the parameters for the models we would like to plot.
+
+<<sscgimage, eval=FALSE>>=
+image(pig206.sscg, model=list(r=2, s=c(0,6)), key=FALSE, layout=c(2,2))
+@
+
+<<sscaimage, eval=FALSE>>=
+image(pig206.ssca, model=list(r=2, s=c(0,6)), key=FALSE, layout=c(2,2))
+@
+
+\setkeys{Gin}{width=\textwidth}
+\begin{figure}[h!]
+\centering
+\begin{subfigure}{.45\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<sscgimage>>
+@
+\caption{\small Segmentation for SSC with Gaussian weights}
+\label{fig:sscgimage}
+\end{subfigure}
+\begin{subfigure}{.45\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<sscaimage>>
+@
+\caption{\small Segmentation for SSC with adaptive weights}
+\label{fig:sscaimage}
+\end{subfigure}
+\caption{\small The spatial segmentations for spatial shrunken centroids clustering with Gaussian and adaptive weights, varying smoothing radii ($r = {1,2}$), initial number of segments ($k = {15,20}$), and shrinkage parameter ($s = {0,3,6,9}$). Colors indicate segment membership. Opacity of the colors indicate probability of the belonging to that segment.}
+\end{figure}
+
+\figref{sscgimage} shows the segmentations for spatial shrunken centroids with Gaussian weights and \figref{sscaimage} shows the segmentations for adaptive weights.
+
+Colors indicate segment membership, but rather than hard assignment to segments, \verb|spatialShrunkenCentroids| produces probabilities of segment membership. We visualize these probabilistic segment assignments using opacity, where higher opacity of a color indicates higher probability of that pixel belonging to that segment.
+
+Visualizing probabilistic segment membership is useful in quickly assessing the quality of a spatial segmentation. Low quality segmentations will yield high uncertainty in the segment assignments, resulting in low probabilities and low opacities. This means that the segmentation will appear ``fuzzier'' and segments will have blurry or indistinct edges. Better segmentations will have higher opacity and sharper edges.
+
+\figref{sscgimage} and \figref{sscaimage} show that an increase the shrinkage parameter $s$ results in fewer segments. We started the clustering interations with both $k = 15$ and $k = 20$ initial segments, but at $s = 6$, the segmentations look very similar. For the Gaussian weights at $s = 6$, the segmentation has 6 segments for both $k = 15$ and $k = 20$. For adaptive weights at $s = 6$, both segmentations have 7 segments.
+
+
+
+\subsubsection{Plotting the (shrunken) mean spectra of the segments}
+
+As part of the feature selection process, the mean spectrum for each segment is shrunken toward the global mean spectrum. The reason for this will be discussed in \secref{tstatistics}. We can plot these shrunken mean spectra and interpret them by analogy to ordinary mean spectra.
+
+<<sscgplot, eval=FALSE>>=
+plot(pig206.sscg, model=list(r=2, s=c(0,6)), key=FALSE, layout=c(2,2), type=c('p', 'h'), pch=20)
+@
+
+<<sscaplot, eval=FALSE>>=
+plot(pig206.ssca, model=list(r=2, s=c(0,6)), key=FALSE, layout=c(2,2), type=c('p', 'h'), pch=20)
+@
+
+\setkeys{Gin}{width=\textwidth}
+\begin{figure}[h!]
+\centering
+\begin{subfigure}{.45\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<skmgplot>>
+@
+\caption{\small Shrunken mean spectra for SSC with Gaussian weights}
+\label{fig:skmgplot}
+\end{subfigure}
+\begin{subfigure}{.45\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<skmaplot>>
+@
+\caption{\small Shrunken mean spectra for SSC with adaptive weights}
+\label{fig:skmaplot}
+\end{subfigure}
+\caption{\small The shrunken mean spectra for spatial shrunken centroids for Gaussian and adaptive weights with varying smoothing radii ($r = {1,2}$), initial number of segments ($k = {5,10}$), and shrinkage parameter ($s = {0,3,6,9}$). Colors indicate the segment from which each shrunken mean spectrum is calculated (corresponding segments can be found in \figref{sscgimage} and \figref{sscaimage}).}
+\end{figure}
+
+\figref{sscgplot} shows the shrunken mean spectra for spatial shrunken centroids with Gaussian weights and \figref{sscaplot} shows the shrunken mean spectra for adaptive weights.
+
+
+
+
+\subsubsection{Plotting and interpreting the t-statistics of the $m/z$ values}
+
+\label{sec:tstatistics}
+
+
+An important goal of our approach to spatial segmentation is that we not only want a meaningful segmentation, but we also want to be able to identify and rank the important mass features that inform that segmentation. The \verb|spatialShrunkenCentroids| method produces t-statistics for this purpose.
+
+For each mass feature ($m/z$ value), t-statistics are calculated for each segment as in \cite{Tibshirani2002} and \cite{Tibshirani2003}, by comparison to the global mean spectrum.
+
+Positive t-statistics correspond to systematic enrichment in that segment. Negative t-statistics correspond to systematic absence from that segment. The shrinkage parameter $s$ is used to shrink t-statistics toward 0, and when a t-statistic is set to 0, that mass feature is no longer used to determe segment membership.
+
+
+<<sscgtstat, eval=FALSE>>=
+plot(pig206.sscg, mode="tstatistics", model=list(r=2, s=c(0,6)), key=FALSE, layout=c(2,2), type=c('p', 'h'), pch=20)
+@
+
+<<sscatstat, eval=FALSE>>=
+plot(pig206.ssca, mode="tstatistics", model=list(r=2, s=c(0,6)), key=FALSE, layout=c(2,2), type=c('p', 'h'), pch=20)
+@
+
+\setkeys{Gin}{width=\textwidth}
+\begin{figure}[h]
+\centering
+\begin{subfigure}{.45\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<sscgtstat>>
+@
+\caption{\small Shrunken t-statistics for SSC with Gaussian weights}
+\label{fig:sscgtstat}
+\end{subfigure}
+\begin{subfigure}{.45\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<sscatstat>>
+@
+\caption{\small Shrunken t-statistics for SSC with adaptive weights}
+\label{fig:sscatstat}
+\end{subfigure}
+\caption{\small The shrunken t-statistics for spatial shrunken centroids for Gaussian and adaptive weights with varying smoothing radii ($r = {1,2}$), initial number of segments ($k = {5,10}$), and shrinkage parameter ($s = {0,3,6,9}$). Colors indicate the segment from which the t-statistics are calculated (corresponding segments can be found in \figref{sscgimage} and \figref{sscaimage}).}
+\end{figure}
+
+Note in \figref{sscgtstat} and \figref{sscatstat} that the segments that disappear as $s$ increases from $s = 0$ to $s = 6$ generally have low t-statistics. These low t-statistics are quickly driven to 0, and their segments are removed from the model and joined with other segments.
+
+The top $m/z$ values for a segmentation can be queried using the \verb|topLabels| method.
+
+<<>>=
+topLabels(pig206.sscg, n=20)
+@
+
+This list can be filtered by the segment, model parameters, etc.
+
+<<>>=
+topLabels(pig206.sscg, model=list(r=2, s=6, k=20), filter=list(classes=5))
+@
+
+See \verb|?topLabels| for details. This will be explored further in \secref{sscinterpret}.
+
+
+
+\subsubsection{Identifying the number of segments}
+
+\label{sec:numberofsegments}
+
+A unique property of our spatial shrunken centroids clustering is that it facilitates a natural way to identify an appropriate number of segments for a segmentation. We do this by plotting the number of predicted segments against the shrinkage parameter $s$ as shown below in \figref{sscnumsegments}. For this dataset, adaptive weights appear to offer no advantage over Gaussian weights, so we focus on the segmentations with Gaussian weights.
+
+<<sscnumsegments, eval=FALSE>>=
+plot(summary(pig206.sscg), main="Number of segments")
+@
+
+In \figref{sscnumsegments}, we look for the shrinkage parameter $s$ for which the predicted number of segments match up between different initialized numbers of segments $k$. For $r = 2$, this occurs at $s = 6$, and we can also see from \figref{sscgimage} earlier that the final segmentations for both $k = 15$ and $k = 20$ at $s = 6$ are nearly identical. This suggests that either of these models are appropriate segmentations.
+
+Therefore, we choose the segmentation with Gaussian weights with $r = 2, k = 20, r = 6$ for further exploration. This segmentation is plotted with custom colors in \figref{sscchosenseg}.
+
+<<sscchosenseg, eval=FALSE>>=
+mycol <- c("#FD9827", "#42FD24", "#CDFD34", "#1995FC", "#3524FB", "#FC0D1B", "#FC23D9")
+image(pig206.sscg, model=list(r=2, k=20, s=6), key=FALSE, col=mycol, main="Selected segmentation")
+@
+
+\setkeys{Gin}{width=\textwidth}
+\begin{figure}[h]
+\centering
+\begin{subfigure}{.45\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<sscnumsegments>>
+@
+\caption{\small Selecting the number of segments for Gaussian weights}
+\label{fig:sscnumsegments}
+\end{subfigure}
+\begin{subfigure}{.45\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<sscchosenseg>>
+@
+\caption{\small Selected segmentation for Gaussian weights ($r = 2, k = 20, s = 6$)}
+\label{fig:sscchosenseg}
+\end{subfigure}
+\caption{\small Plotting the predicted number of segments shows that for Gassian weights and $r = 2$, the resulting number of segments coincide after $s = 6$. Therefore, we choose the segmentation for $r = 2, k = 20, s = 6$, which results in 6 segments.}
+\end{figure}
+
+Typically, we recommend choosing the segmentation with the most retained features (least sparsity) after which the predicted number of segmentations become approximately equal between different initializations of $k$.
+
+
+
+\subsubsection{Interpretting the spatial segmentation}
+
+\label{sec:sscinterpret}
+
+
+To further explore the spatial segmentation we selected in \secref{numberofsegments}, we want to create plots that show the mass features that are important in distinguishing certain segments.
+
+For this purpose, we write a function \Robject{summaryPlot} that will plot the probabilities for a segment, plot its shrunken mean spectrum and t-statistics, and plot the top 3 ion images associated with the segment.
+
+<<>>=
+summaryPlots <- function(dataset, results, model, segment, name, col) {
+  image(results, model=model, key=FALSE, column=segment, main=name, layout=c(3,2), col=col)
+  plot(results, model=model, key=FALSE, column=segment, mode="centers", main="Shrunken mean spectrum", col=col)
+  plot(results, model=model, key=FALSE, column=segment, mode="tstatistics", main="Shrunken t-statistics", col=col)
+  top <- topLabels(results, n=3, model=model, filter=list(classes=segment))
+  image(dataset, mz=top$mz, normalize.image="linear", contrast.enhance="histogram", smooth.image="gaussian")
+}
+@
+
+Now we create these summary plots for the segment associated with the liver.
+
+<<sscgliver, eval=FALSE>>=
+summaryPlots(pig206, pig206.sscg, model=list(r=2, s=6, k=20), segment=5, name="Liver segment", col=mycol)
+@
+
+\begin{figure}[h!]
+\setkeys{Gin}{width=0.9\textwidth}
+\begin{center}
+<<fig=TRUE, echo=FALSE, height=6, width=9>>=
+<<sscgliver>>
+@
+\caption{\small Summary plots of the liver segment for PIGII\_206 segmentation with Gaussian weights and $r = 2, k = 20, s = 6$.}
+\label{fig:sscgliver}
+\end{center}
+\end{figure}
+
+From the shrunken mean spectrum and t-statistics plot in \figref{sscgliver}, we can see that many of the mass features in the $m/z$ 500--600 range and $m/z$ 800--900 range are positively associated with the liver from their high positive t-statistics, showing that they are systematically enriched in the liver. Many of the low mass range features are negatively associated with the liver, as seen by their negative t-statistics, showing that they are systematically absent in the liver. The three top ions associated with the liver are also plotted.
+
+To contrast with the liver segment, we do the same for the heart segment below.
+
+<<sscgheart, eval=FALSE>>=
+summaryPlots(pig206, pig206.sscg, model=list(r=2, s=6, k=20), segment=6, name="Heart segment", col=mycol)
+@
+
+\begin{figure}[h!]
+\setkeys{Gin}{width=0.9\textwidth}
+\begin{center}
+<<fig=TRUE, echo=FALSE, height=6, width=9>>=
+<<sscgheart>>
+@
+\caption{\small Summary plots of the heart segment for PIGII\_206 segmentation with Gaussian weights and $r = 2, k = 20, s = 6$.}
+\label{fig:sscgliver}
+\end{center}
+\end{figure}
+
+Compared to the liver segment, we see that for the heart segment, only a few mass features have non-zero t-statistics. This shows that fewer ions are associated with the heart compared to the liver.
+
+
+
+% <<eval=FALSE, echo=FALSE>>=
+% save(pig206, pig206.peaklist, pig206.peaks, file="~/Documents/Developer/Projects/CardinalWorkflows/data/pig206.rda", compress="xz")
+% save(pig206.pca, pig206.skmg, pig206.skma, pig206.sscg, pig206.ssca, file="~/Documents/Developer/Projects/CardinalWorkflows/data/pig206_analyses.rda", compress="xz")
+% @
+
+
+
+
+
+
+
+
+
+\section{Additional examples}
+
+A difficulty with evaluating spatial segmentation methods is that typically the ground truth is not known. Our experimental subjects are often complex biological systems, and there is usually no ``gold standard'' to compare with our results.
+
+We now perform spatial segmentation on MS images for which the ground truth is known.
+
+\subsection{Evaluation using a cardinal painting}
+
+In this first example, we present an oil painting of a cardinal, created to illustrate the utility of DESI imaging. Mass spectra were collected from the pigments in the paint, and we expect that different colors will produce unique patterns of spectral peaks, allowing for spatial segmentation.
+
+
+<<eval=TRUE>>=
+data(bierbaum, bierbaum_analyses)
+@
+
+
+We normalize the data using TIC normalization.
+
+<<eval=FALSE>>=
+bierbaum.norm <- normalize(bierbaum, method="tic")
+@
+
+
+Now we perform peak-picking and alignment as in \secref{peakpicking}.
+
+<<eval=FALSE>>=
+bierbaum.peaklist <- peakPick(bierbaum.norm, pixel=seq(1, ncol(bierbaum), by=10), method="simple", SNR=6)
+
+bierbaum.peaklist <- peakAlign(bierbaum.peaklist, ref=bierbaum.norm, method="diff", units="ppm", diff.max=200)
+
+bierbaum.peaklist <- peakFilter(bierbaum.peaklist, method="freq", freq.min=ncol(bierbaum.peaklist) / 100)
+
+bierbaum.peaks <- reduceDimension(bierbaum.norm, ref=bierbaum.peaklist, type="height")
+@
+
+
+Next we perform spatial shrunken centroids clustering on the dataset, with both Gaussian and adaptive weights and a range of parameters for $r$, $k$, and $s$.
+
+<<eval=FALSE>>=
+set.seed(1)
+bierbaum.sscg <- spatialShrunkenCentroids(bierbaum.peaks, r=c(1,2), k=c(10,15), s=c(0,3,6,9), method="gaussian")
+
+set.seed(1)
+bierbaum.ssca <- spatialShrunkenCentroids(bierbaum.peaks, r=c(1,2), k=c(10,15), s=c(0,3,6,9), method="adaptive")
+@
+
+
+As in \secref{numberofsegments}, we plot the predicted number of classes against the shrinkage parameter $s$ to help determine the most appropriate model parameters for the data. \figref{bierbaumchooseg} shows this plot for the segmentations with Gaussian weights, and \figref{bierbaumchoosea} shows this for adaptive weights.
+
+<<bierbaumchooseg>>=
+plot(summary(bierbaum.sscg))
+@
+
+<<bierbaumchoosea>>=
+plot(summary(bierbaum.ssca))
+@
+
+For adaptive weights, the predicted number of segments quickly converge at $s = 3$, while the same does not happen for Gaussian weights until $s = 9$. This is likely because adaptive weights are more appropriate for this dataset, in order to fit the thin ``DESI-MS'' writing below the cardinal.
+
+We plot the segmentation for $r = 1, k = 10, s = 3$, resulting in 8 segments, shown in \figref{bierbaumsscg}.
+
+
+<<bierbaumsscg, eval=FALSE>>=
+mycol <- c("#5C605C", "#4D2C36", "#A1A1A1", "#999999", "#B02020", "#1B1B1B", "#901010", "#906565")
+
+image(bierbaum.sscg, model=list(r=1, k=10, s=3), key=FALSE, col=mycol)
+@
+
+We also plot the segmentation for $r = 2, k = 10, s = 3$, resulting in 8 segments, shown in \figref{bierbaumssca}.
+
+
+<<bierbaumssca, eval=FALSE>>=
+mycol <- c("#1B1B1B", "#A1A1A1", "#906565", "#999999", "#B02020", "#901010", "#5C605C", "#4D2C36")
+
+image(bierbaum.ssca, model=list(r=2, k=10, s=3), key=FALSE, col=mycol)
+@
+
+
+\setkeys{Gin}{width=\textwidth}
+\begin{figure}[h]
+\centering
+\begin{subfigure}{.3\textwidth}
+  \centering
+\includegraphics{bierbaum-optical.png}
+\caption{\small Cardinal painting}
+\label{fig:bierbaumoptical}
+\end{subfigure}
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<bierbaumsscg>>
+@
+\caption{\small Segmentation for $r = 1, k = 10, s = 3$ with Gaussian weights}
+\label{fig:bierbaumsscg}
+\end{subfigure}
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<bierbaumssca>>
+@
+\caption{\small Segmentation for $r = 2, k = 10, s = 3$ with adaptive weights}
+\label{fig:bierbaumssca}
+\end{subfigure}
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<bierbaumchooseg>>
+@
+\caption{\small Selecting the number of segments for Gaussian weights}
+\label{fig:bierbaumchooseg}
+\end{subfigure}
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<bierbaumchoosea>>
+@
+\caption{\small Selecting the number of segments for adaptive weights}
+\label{fig:bierbaumchoosea}
+\end{subfigure}
+\caption{\small Spatial segmentation of the cardinal painting for both Gaussian and adaptive weights, and the plots for selecting the number of segments.}
+\end{figure}
+
+For Gaussian weights, we choose $r = 1$ so that the ``DESI-MS'' writing is not oversmoothed, and $s = 3$, where the the predicted number of segments are nearly convergent at 8 segments and 9 segments for $k = 10$ and $k = 15$, respectively.
+
+For adaptive weights, we choose $r = 2, s = 3$, since with the adaptive weights we can use a larger smoothing radius without oversmoothing, and the number of segments first converge between both initializations for $k$ at $s = 3$.
+
+We note that the segmentation matches up well against the original painting, so the method is performing well.
+
+
+
+% <<eval=FALSE, echo=FALSE>>=
+% save(bierbaum, bierbaum.peaklist, bierbaum.peaks, file="~/Documents/Developer/Projects/CardinalWorkflows/data/bierbaum.rda", compress="xz")
+% save(bierbaum.sscg, bierbaum.ssca, file="~/Documents/Developer/Projects/CardinalWorkflows/data/bierbaum_analyses.rda", compress="xz")
+% @
+
+
+
+
+
+
+\subsection{Evaluation using a farmhouse painting}
+
+
+Now we perform the same analysis on a different painting. This time, we analyze a painting of a farmhouse, also collected using DESI imaging.
+
+<<eval=TRUE>>=
+data(farmhouse, farmhouse_analyses)
+@
+
+We normalize the mass spectra.
+
+<<eval=FALSE>>=
+farmhouse.norm <- normalize(farmhouse, method="tic")
+@
+
+We perform peak-picking and alignment.
+
+<<eval=FALSE>>=
+farmhouse.peaklist <- peakPick(farmhouse.norm, pixel=seq(1, ncol(farmhouse), by=10), method="simple", SNR=6)
+
+farmhouse.peaklist <- peakAlign(farmhouse.peaklist, ref=farmhouse.norm, method="diff", units="ppm", diff.max=200)
+
+farmhouse.peaklist <- peakFilter(farmhouse.peaklist, method="freq", freq.min=ncol(farmhouse.peaklist) / 100)
+
+farmhouse.peaks <- reduceDimension(farmhouse.norm, ref=farmhouse.peaklist, type="height")
+@
+
+We perform spatial shrunken centroids clustering with both Gaussian and adaptive weights.
+
+
+<<eval=FALSE>>=
+set.seed(1)
+farmhouse.sscg <- spatialShrunkenCentroids(farmhouse.peaks, r=c(1,2), k=c(10, 15), s=c(0,3,6,9), method="gaussian")
+
+set.seed(1)
+farmhouse.ssca <- spatialShrunkenCentroids(farmhouse.peaks, r=c(1,2), k=c(10, 15), s=c(0,3,6,9), method="adaptive")
+@
+
+
+We plot the number of segments against the shrinkage parameter, with the plot for Gaussian weights shown in \figref{farmhousechooseg} and the plot for adaptive weights shown in \figref{farmhousechoosea}.
+
+
+<<farmhousechooseg>>=
+plot(summary(farmhouse.sscg))
+@
+
+<<farmhousechoosea>>=
+plot(summary(farmhouse.ssca))
+@
+
+For Gaussian weights, shown in \figref{farmhousechooseg}, the predicted number of segments quickly converge for $r = 1$ at $s = 3$, and more slowly for $r = 2$ at $s = 6$. As with the cardinal painting, this likely reflects the tendency for Gaussian weights to oversmooth at edges and around thin features. Therefore, we plot the segmentation for $r = 1, k = 10, s = 3$, resulting in 9 segments, shown in \figref{farmhousesscg}.
+
+<<farmhousesscg, eval=FALSE>>=
+mycol <- c("#203EF6", "#503525", "#707020", "#301010", "#CC1515", "#2F6010", "#999999", "#DCE3E9", "#AD7C40")
+
+image(farmhouse.sscg, model=list(r=1, k=10, s=3), key=FALSE, col=mycol)
+@
+
+For adaptive weights, shown in \figref{farmhousechoosea}, the predicted number of segments are already converged at $s = 0$ for $r = 2$, with 10 segments for both $k = 10$ and $k = 15$. To more easily compare with the segmentation using Gaussian weights, we plot the segmentation for $r = 2, k = 10, s = 3$ as shown in \figref{farmhousessca}.
+
+<<farmhousessca, eval=FALSE>>=
+mycol <- c("#203EF6", "#503525", "#707020", "#2F6010", "#AD7C40", "#CC1515", "#999999", "#DCE3E9", "#301010", "#301010")
+
+image(farmhouse.ssca, model=list(r=2, k=10, s=3), key=FALSE, col=mycol)
+@
+
+\setkeys{Gin}{width=\textwidth}
+\begin{figure}[h]
+\centering
+\begin{subfigure}{.3\textwidth}
+  \centering
+\includegraphics{farmhouse-optical.png}
+\caption{\small Cardinal painting}
+\label{fig:farmhouseoptical}
+\end{subfigure}
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<farmhousesscg>>
+@
+\caption{\small Segmentation for $r = 1, k = 10, s = 3$ with Gaussian weights}
+\label{fig:farmhousesscg}
+\end{subfigure}
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<farmhousessca>>
+@
+\caption{\small Segmentation for $r = 2, k = 10, s = 3$ with adaptive weights}
+\label{fig:farmhousessca}
+\end{subfigure}
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<farmhousechooseg>>
+@
+\caption{\small Selecting the number of segments for Gaussian weights}
+\label{fig:farmhousechooseg}
+\end{subfigure}
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<farmhousechoosea>>
+@
+\caption{\small Selecting the number of segments for adaptive weights}
+\label{fig:farmhousechoosea}
+\end{subfigure}
+\caption{\small Spatial segmentation of the farmhouse painting for both Gaussian and adaptive weights, and the plots for selecting the number of segments.}
+\end{figure}
+
+This painting is more complex than the cardinal painting, so it is more difficult to reconstruct through spatial segmentation. Still, many of the features of the painting can be found in the segmentations, such as the red farmhouses, the tree, the blue sky, and the white fence. However, more complex regions with mixed colors -- such as the roofs, the leaves, and windmill -- show less accuracy. Overall, the segmentation strongly reflects the original painting.
+
+
+% <<eval=FALSE, echo=FALSE>>=
+% save(farmhouse, farmhouse.peaklist, farmhouse.peaks, file="~/Documents/Developer/Projects/CardinalWorkflows/data/farmhouse.rda", compress="xz")
+% save(farmhouse.sscg, farmhouse.ssca, file="~/Documents/Developer/Projects/CardinalWorkflows/data/farmhouse_analyses.rda", compress="xz")
+% @
+
+
+
+
+
+\section{Session info}
+
+<<results=tex, echo=FALSE>>=
+toLatex(sessionInfo())
+@
+
+% \bibliographystyle{unsrt}
+\bibliography{CardinalWorkflows}
+
+\end{document}
