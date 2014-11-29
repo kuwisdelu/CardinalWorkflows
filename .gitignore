@@ -1,1 +1,2 @@
+# Don't track large binary data files
 data/*.rda
