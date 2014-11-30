@@ -6,7 +6,7 @@
 \title{Datasets and workflows for the Cardinal mass spectrometry imaging package}
 
 \description{
-Datasets and workflows for Cardinal: DESI and MALDI examples including pig fetus, painting, RCC cancer, and mouse and rat brain.
+Datasets and workflows for Cardinal: DESI and MALDI examples including pig fetus, cardinal and farmhouse painting, and human RCC.
 }
 
 \details{

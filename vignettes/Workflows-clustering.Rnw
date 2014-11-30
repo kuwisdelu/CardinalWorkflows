@@ -211,6 +211,8 @@ image(pig206, mz=537, contrast.enhance="histogram", smooth.image="gaussian")
 These ion images show morphological features such as the heart (\figref{ionimage187}), brain (\figref{ionimage284}), and liver (\figref{ionimage537}) that an unsupervised analysis should identify in a spatial segmentation.
 
 
+
+
 \subsubsection{Exploratory analysis using PCA}
 
 Principal component analysis (PCA) is another popular method for exploring a dataset. PCA is also available in \Rpackage{Cardinal}. We now explore the peak-picked dataset using PCA with 5 components, fit below using the \verb|PCA| method.
@@ -508,18 +510,18 @@ plot(pig206.ssca, model=list(r=2, s=c(0,6)), key=FALSE, layout=c(2,2), type=c('p
 \begin{subfigure}{.45\textwidth}
   \centering
 <<fig=TRUE, echo=FALSE>>=
-<<skmgplot>>
+<<sscgplot>>
 @
 \caption{\small Shrunken mean spectra for SSC with Gaussian weights}
-\label{fig:skmgplot}
+\label{fig:sscgplot}
 \end{subfigure}
 \begin{subfigure}{.45\textwidth}
   \centering
 <<fig=TRUE, echo=FALSE>>=
-<<skmaplot>>
+<<sscaplot>>
 @
 \caption{\small Shrunken mean spectra for SSC with adaptive weights}
-\label{fig:skmaplot}
+\label{fig:sscaplot}
 \end{subfigure}
 \caption{\small The shrunken mean spectra for spatial shrunken centroids for Gaussian and adaptive weights with varying smoothing radii ($r = {1,2}$), initial number of segments ($k = {5,10}$), and shrinkage parameter ($s = {0,3,6,9}$). Colors indicate the segment from which each shrunken mean spectrum is calculated (corresponding segments can be found in \figref{sscgimage} and \figref{sscaimage}).}
 \end{figure}
@@ -975,6 +977,6 @@ toLatex(sessionInfo())
 @
 
 % \bibliographystyle{unsrt}
-\bibliography{CardinalWorkflows}
+\bibliography{Workflows}
 
 \end{document}

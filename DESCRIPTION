@@ -1,12 +1,12 @@
 Package: CardinalWorkflows
 Type: Package
 Title: Datasets and workflows for the Cardinal mass spectrometry imaging package
-Version: 0.3.0
-Date: 2014-11-23
+Version: 0.4.0
+Date: 2014-11-30
 Author: Kyle D. Bemis <kbemis@purdue.edu>
 Maintainer: Kyle D. Bemis <kbemis@purdue.edu>
 Description: Datasets and workflows for Cardinal: DESI and MALDI examples
-	including pig fetus, painting, RCC cancer, and mouse and rat brain.
+	including pig fetus, cardinal and farmhouse painting, and human RCC.
 License: Artistic-2.0
 Depends: Cardinal
 Suggests: BiocStyle

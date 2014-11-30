@@ -2,5 +2,8 @@
 NEWS for CardinalWorkflows package
 -------------------------
 
-Version 0.3.0 [2014-11-23]
-o Uploaded to datasets for workflows to Github
+Version 0.4.0 [2014-11-30]
+o Completed classification vignette
+
+Version 0.3.0 [2014-11-28]
+o Compeleted clustering vignette
