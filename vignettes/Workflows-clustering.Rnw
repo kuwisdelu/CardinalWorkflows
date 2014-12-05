@@ -39,7 +39,7 @@ BiocStyle::latex()
 library(Cardinal)
 options(Cardinal.verbose=FALSE)
 options(Cardinal.progress=FALSE)
-options(width=80)
+options(width=100)
 @
 
 \section{Introduction}
@@ -397,7 +397,7 @@ Like PCA, spatially-aware k-means clustering is useful for quickly visualizing a
 
 \subsection{Spatial segmentation using spatial shrunken centroids clustering}
 
-This section demonstrates the spatial shrunken centroids clustering (SSC) method for statistical analysis we introduce in \Rpackage{Cardinal} in the \verb|spatialShrunkenCentroids| method.
+This section demonstrates the spatial shrunken centroids clustering method for statistical analysis we introduce in \Rpackage{Cardinal} in the \verb|spatialShrunkenCentroids| method.
 
 The Gaussian and adaptive weights are retained from the spatially-aware k-means clustering \cite{Alexandrov2011}. In addition, we introduce statistical regularization as in nearest shrunken centroids to enforce feature sparsity \cite{Tibshirani2002}. This means doing feature selection, so that the analysis automatically identifies informative $m/z$ values.
 

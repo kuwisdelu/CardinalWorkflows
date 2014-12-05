@@ -36,7 +36,7 @@ BiocStyle::latex()
 library(Cardinal)
 options(Cardinal.verbose=FALSE)
 options(Cardinal.progress=FALSE)
-options(width=80)
+options(width=100)
 @
 
 \section{Introduction}
@@ -48,6 +48,8 @@ Unlike unsupervised analysis such as clustering, classification requires biologi
 In this vignette, an example classification workflow in \Rpackage{Cardinal} is presented, together with plots of the results.
 
 \section{Analysis of a renal cell carcinoma (RCC) cancer dataset}
+
+\label{sec:rcc}
 
 This example uses a renal cell carcinoma (RCC) cancer dataset consisting of 8 matched pairs of human kidney tissue. Each tissue pair consists of a normal tissue sample and a cancerous tissue sample. The goal of the workflow is to develop classifiers for predicting whether a new tissue sample is normal or cancer.
 
@@ -168,11 +170,11 @@ The normalized data is then resampled to unit resolution. Binning would also be 
 rcc.resample <- reduceDimension(rcc.norm, method="resample")
 @
 
-As discussed above in \secref{preprocessing}, resampling or binning is preferred to peak-picking for classification. However, if peak-picking is preferred, this can be worked around by performing peak-picking separately on the training set \textit{only}, and using the same peaks in the testing and validation sets. This can become a complex procedure if cross-validation is desired, and will not be covered in this vignette.
+As discussed above, resampling or binning is preferred to peak-picking for classification. However, if peak-picking is preferred, this can be worked around by performing peak-picking separately on the training set \textit{only}, and using the same peaks in the testing and validation sets. This can become a complex procedure if cross-validation is desired, and will not be covered in this vignette.
 
 \subsubsection{Subsetting the dataset}
 
-Lastly, we will subset the dataset to drop pixels that contain only the slide backgruond, so that the final dataset will only consist of mass spectra from actual tissue.
+Lastly, we will subset the dataset to drop pixels that contain only the slide background, so that the final dataset will only consist of mass spectra from actual tissue.
 
 To subset the data, we will use the \Robject{diagnosis} variable stored in the object's \Robject{pixelData}. This variable is a \textit{factor} with the disease condition for each pixel, as annotated by a pathologist.
 
@@ -205,6 +207,8 @@ Now the dataset contains only the 6077 mass spectra we need to train and test a 
 In this section, we will walk through several visualization methods to explore the dataset before training our classifiers.
 
 \subsubsection{Visualization of single-ion images}
+
+\label{sec:ionimages}
 
 To begin visualizing the dataset, we will plot ion images for $m/z$ values we already know to be useful in distinguishing normal tissue versus cancer.
 
@@ -416,7 +420,7 @@ rcc.cv.pls <- cvApply(rcc.small, .y=rcc.small$diagnosis, .fun="PLS", ncomp=1:15)
 We plot the cross-validated accuracy to determine the best number of components for prediction, shown in \figref{plsaccuracy}.
 
 <<plsaccuracy, eval=FALSE>>=
-plot(summary(rcc.cv.pls), main="PLS-DA accuracy")
+plot(summary(rcc.cv.pls))
 @
 
 As seen in \figref{plsaccuracy}, 10 PLS components produce the best prediction rate, with 96.8\% cross-validated accuracy.
@@ -527,15 +531,17 @@ Orthogonal partial least squares discriminant analysis (O-PLS-DA) is another mul
 
 O-PLS-DA can often produce comparable accuracy to PLS-DA, but with more stable and easily interprettable coefficients.
 
-We now use cross-validation to fit O-PLS-DA models for the RCC dataset.
 
+\subsubsection{Cross-validation with partial least squares}
+
+We now use cross-validation to fit O-PLS-DA models for the RCC dataset.
 
 <<eval=FALSE>>=
 rcc.cv.opls <- cvApply(rcc.small, .y=rcc.small$diagnosis, .fun="OPLS", ncomp=1:15, keep.Xnew=FALSE)
 @
 
 <<oplsaccuracy, eval=FALSE>>=
-plot(summary(rcc.cv.opls), main="O-PLS-DA accuracy")
+plot(summary(rcc.cv.opls))
 @
 
 As seen in \figref{oplsaccuracy}, 12 O-PLS components produce the best prediction rate, with 95.7\% cross-validated accuracy.
@@ -555,7 +561,9 @@ summary(rcc.cv.pls)$accuracy[["ncomp = 12"]]
 \end{center}
 \end{figure}
 
-As with PLS-DA, we not plot the images for the O-PLS-DA fitted values, to visually show the predictions, shown in \figref{oplsimages}.
+\subsubsection{Plotting the classified images}
+
+As with PLS-DA, we now plot the images for the O-PLS-DA fitted values, to visually show the predictions, shown in \figref{oplsimages}.
 
 <<oplsimages, eval=FALSE>>=
 image(rcc.cv.opls, model=list(ncomp=12), layout=c(4,2))
@@ -573,6 +581,8 @@ image(rcc.cv.opls, model=list(ncomp=12), layout=c(4,2))
 \end{figure}
 
 \figref{oplsimages} shows good quality prediction comparable with PLS-DA.
+
+\subsubsection{Plotting and interpretting the coefficients of the $m/z$ values}
 
 Now we consider the O-PLS coefficients by training a classifier on the full dataset with the optimal number of O-PLS components as shown by cross-validation.
 
@@ -610,23 +620,194 @@ The O-PLS coefficients rank $m/z$ 886 highly for cancer, which we know to be mor
 
 
 
-% \subsection{Classification using spatial shrunken centroids}
-
-
-% This section is under construction.
 
 
 
+\subsection{Classification using spatial shrunken centroids}
 
-\section{Session info}
+This section demonstrates the spatial shrunken centroids classification method for statistical analysis we introduce in \Rpackage{Cardinal} in the \verb|spatialShrunkenCentroids| method.
+
+In this method, we adapt the nearest shrunken centroids classifier \cite{Tibshirani2002} with spatial smoothing. This method uses statistical regularization to shrink each condition's mean spectrum toward the global mean spectrum. This shrinkage allows automated feature selection of important masses. It then classifies pixels by comparing their mass spectra to the shrunken mean spectra of each conditions. The spatial smoothing uses weights adapted from spatially-aware clustering \cite{Alexandrov2011}, including Gaussian weights, and adaptive weights that attempt to account for local structure.
+
+The parameters to be explicitly provided in the \verb|spatialShrunkenCentroids| method are:
+
+\begin{itemize}
+  
+  \item $r$: The neighborhood smoothing radius
+  \item $s$: The shrinkage parameter
+
+\end{itemize}
+
+The $s$ parameter is the shrinkage parameter that enforces sparsity. As $s$ increases, fewer mass features ($m/z$ values) will be used by the classifier, and only the informative mass features will be retained. 
+
+For a detailed explanation of the shrinkage parameter $s$, see \cite{Tibshirani2002} and \cite{Tibshirani2003}.
+
+Clustering can also be performed if no response variable $y$ is given, by providing an additional parameter $k$ for the initial number of clusters. See the clustering workflow for details.
+
+\subsubsection{Cross-validation with spatial shrunken centroids}
+
+Now we perform cross-validation with spatial shrunken centroids classification and the \verb|method="gaussian"| weights.
+
+<<eval=FALSE>>=
+rcc.cv.sscg <- cvApply(rcc.small, .y=rcc.small$diagnosis, .fun="spatialShrunkenCentroids", method="gaussian", r=c(1,2,3), s=c(0,4,8,12,16,20,24,28))
+@
+
+And we perform cross-validation with spatial shrunken centroids classification and the \verb|method="adaptive"| weights.
+
+<<eval=FALSE>>=
+rcc.cv.ssca <- cvApply(rcc.small, .y=rcc.small$diagnosis, .fun="spatialShrunkenCentroids", method="adaptive", r=c(1,2,3), s=c(0,4,8,12,16,20,24,28))
+@
+
+Now we plot the cross-validated accuracy for the classifier with Gaussian weights in \figref{sscgaccuracy} and adaptive weights in \figref{sscaaccuracy}.
+
+<<sscgaccuracy, eval=FALSE>>=
+plot(summary(rcc.cv.sscg))
+@
+
+<<sscaaccuracy, eval=FALSE>>=
+plot(summary(rcc.cv.ssca))
+@
+
+\setkeys{Gin}{width=\textwidth}
+\begin{figure}[h]
+\centering
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<sscgaccuracy>>
+@
+\caption{\small Accuracy for Gaussian weights}
+\label{fig:sscgaccuracy}
+\end{subfigure}
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<sscaaccuracy>>
+@
+\caption{\small Accuracy for adaptive weights}
+\label{fig:sscaaccuracy}
+\end{subfigure}
+\caption{\small Plots of accuracy for spatial shrunken centroids, showing highest accuracy for $s = 20$ and $r = 3$.}
+\label{fig:sscaccuracy}
+\end{figure}
+
+As shown in \figref{sscaccuracy}, for both weight types and all smoothing radii $r$, the highest accuracy occurs with a shrinkage parameter $s = 20$, except for the case with adaptive weights and $r = 1$, for which the highest accuracy occurs at $s = 16$. For Gaussian weights with $r = 3, s = 20$, accuracy was 88.8\%.
+
+Note that in general, the accuracy increases with larger smoothing neighborhood radii $r$. This is likely because rather than heterogenous samples with both normal and cancerous cells on the same tissue, each tissue is relatively homogenous with predominantly normal or cancerous cells. Therefore, greater spatial smoothing increases the accuracy, and adaptive weights have no advantage over Gaussian weights. For classification on more heterogenous tissue, adaptive weights may perform better.
+
+
+\subsubsection{Plotting the classified images}
+
+\label{sec:sscimages}
+
+Now we plot the classified images for Gaussian weights in \figref{sscgimages} and adaptive weights in \figref{sscaimages}.
+
+<<sscgimages>>=
+image(rcc.cv.sscg, model=list(r=3, s=20), layout=c(4,2))
+@
+
+<<sscaimages>>=
+image(rcc.cv.ssca, model=list(r=3, s=20), layout=c(4,2))
+@
+
+\setkeys{Gin}{width=\textwidth}
+\begin{figure}[h]
+\centering
+\begin{subfigure}{.9\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE, width=8, height=4>>=
+<<sscgimages>>
+@
+\caption{\small Probabilities for Gaussian weights}
+\label{fig:sscgimages}
+\end{subfigure}
+\begin{subfigure}{.9\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE, width=8, height=4>>=
+<<sscaimages>>
+@
+\caption{\small Probabilities for adaptive weights}
+\label{fig:sscaimages}
+\end{subfigure}
+\caption{\small Predicted probabilities of cancer and normal, with higher opacity for a condition's color indicating higher probability.}
+\end{figure}
+
+Unlike PLS-DA and O-PLS-DA, spatial shrunken centroids produce probabilities of cancer versus normal, which we plot using higher opacity for higher probability. This makes for more interpretable predicted images.
+
+
+\subsubsection{Plotting and interpreting the t-statistics of the $m/z$ values}
+
+A major advantage of spatial shrunken centroids is that it provides t-statistics for each feature for each condition, and it uses statistical regularization to perform automatic feature selection. This allows for easier identification of important $m/z$ values, and a more straightforward and interpretable method of ranking their relative importance.
+
+To inspect the t-statistics of the $m/z$ values, we now train classifiers on the full dataset using the parameters $r = 3, s = 20$.
+
+<<eval=FALSE>>=
+rcc.sscg <- spatialShrunkenCentroids(rcc.small, y=rcc.small$diagnosis, r=3, s=20, method="gaussian")
+
+rcc.ssca <- spatialShrunkenCentroids(rcc.small, y=rcc.small$diagnosis, r=3, s=20, method="adaptive")
+@
+
+Now we plot the t-statistics, shown for Gaussian weights in \figref{sscgtstat} and for adaptive weights in \figref{sscatstat}.
+
+<<sscgtstat>>=
+plot(rcc.sscg, mode="tstatistics", model=list(r=3, s=20))
+@
+
+<<sscatstat>>=
+plot(rcc.ssca, mode="tstatistics", model=list(r=3, s=20))
+@
+
+\setkeys{Gin}{width=\textwidth}
+\begin{figure}[h]
+\centering
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<sscgtstat>>
+@
+\caption{\small Shrunken t-statistics for Gaussian weights}
+\label{fig:sscgtstat}
+\end{subfigure}
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<sscatstat>>
+@
+\caption{\small Shrunken t-statistics for adaptive weights}
+\label{fig:sscatstat}
+\end{subfigure}
+\caption{\small Predicted probabilities of cancer and normal, with higher opacity for a condition's color indicating higher probability.}
+\end{figure}
+
+As seen in \figref{sscgtstat} and \figref{sscatstat}, only a few $m/z$ values have non-zero t-statistics.
+
+<<>>=
+summary(rcc.sscg)
+summary(rcc.ssca)
+@
+
+In fact, only 40 of 850 mass features are used in the spatial shrunken centroids classifier.
+
+We identify the top-ranked mass features using the \verb|topLabels| method.
+
+<<>>=
+topLabels(rcc.sscg)
+topLabels(rcc.ssca)
+@
+
+Note that the shrunken t-statistics are identical between the Gaussian and adaptive weights, since they are based on the same training data, and the spatial structure is taken into account only for the predicted probabilities.
+
+Spatial shrunken centroids identified $m/z$ 215, $m/z$ 886, and $m/z$ 810, which were also identified by O-PLS-DA, and are all known to be important (as discussed in \secref{ionimages}), as well as $m/z$ 751, which was identified by PLS-DA. Of the three methods, spatial shrunken centroids most reliably selected the $m/z$ values known to be associated with cancer and normal, in addition to selecting potentially informative new $m/z$ values.
+
 
 % <<eval=FALSE, echo=FALSE>>=
 % save(rcc, rcc.resample, rcc.small, file="~/Documents/Developer/Projects/CardinalWorkflows/data/rcc.rda", compress="xz")
-% save(rcc.pca, rcc.cv.pls, rcc.pls, rcc.cv.opls, rcc.opls, file="~/Documents/Developer/Projects/CardinalWorkflows/data/rcc_analyses.rda", compress="xz")
+% save(rcc.pca, rcc.cv.pls, rcc.pls, rcc.cv.opls, rcc.opls, rcc.cv.sscg, rcc.cv.ssca, rcc.sscg, rcc.ssca, file="~/Documents/Developer/Projects/CardinalWorkflows/data/rcc_analyses.rda", compress="xz")
 % @
 
 
 
+\section{Session info}
 
 <<results=tex, echo=FALSE>>=
 toLatex(sessionInfo())
