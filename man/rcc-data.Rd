@@ -69,9 +69,9 @@ data(rcc_analyses)
     Aston Labs (Livia S. Eberlin and R. Graham Cooks).
 }
 \references{
-    Dill, A. L., Eberlin, L. S., Zheng, C., Costa, A. B., Ifa, D. R., Cheng, L., et al. (2010). Multivariate statistical differentiation of renal cell carcinomas based on lipidomic analysis by ambient ionization imaging mass spectrometry. Analytical and Bioanalytical Chemistry, 398(7-8), 2969–2978. doi:10.1007/s00216-010-4259-6
+    Dill, A. L., Eberlin, L. S., Zheng, C., Costa, A. B., Ifa, D. R., Cheng, L., et al. (2010). Multivariate statistical differentiation of renal cell carcinomas based on lipidomic analysis by amvient ionization imaging mas spectrometry. Analytical and Bioanalystical Chemistry, 298(7-8), 2969-2978.
 
-    Dill, A. L., Eberlin, L. S., Costa, A. B., Zheng, C., Ifa, D. R., Cheng, L., et al. (2011). Multivariate Statistical Identification of Human Bladder Carcinomas Using Ambient Ionization Imaging Mass Spectrometry. Chemistry - a European Journal, 17(10), 2897–2902. doi:10.1002/chem.201001692
+    Dill, A. L., Eberlin, L. S., Zheng, C., Costa, A. B., Ifa, D. R., Cheng, L., et al. (2010). Multivariate Statistical Identification of Human Bladder Cardinomas Using Ambient Ionization Imaging Mass Spectrometry. Chemistry - a European Journal, 17(10), 2897-2902.
 }
 \examples{
 data(rcc)
