@@ -706,13 +706,13 @@ Compared to the liver segment, we see that for the heart segment, only a few mas
 
 
 
+\clearpage
 
-
-\section{Additional examples}
+\section{Additional example}
 
 A difficulty with evaluating spatial segmentation methods is that typically the ground truth is not known. Our experimental subjects are often complex biological systems, and there is usually no ``gold standard'' to compare with our results.
 
-We now perform spatial segmentation on MS images for which the ground truth is known.
+We now perform spatial segmentation on an MS image for which the ground truth is known.
 
 \subsection{Evaluation using a cardinal painting}
 
@@ -720,27 +720,27 @@ In this first example, we present an oil painting of a cardinal, created to illu
 
 
 <<eval=TRUE>>=
-data(bierbaum, bierbaum_analyses)
+data(cardinal, cardinal_analyses)
 @
 
 
 We normalize the data using TIC normalization.
 
 <<eval=FALSE>>=
-bierbaum.norm <- normalize(bierbaum, method="tic")
+cardinal.norm <- normalize(cardinal, method="tic")
 @
 
 
 Now we perform peak-picking and alignment as in \secref{peakpicking}.
 
 <<eval=FALSE>>=
-bierbaum.peaklist <- peakPick(bierbaum.norm, pixel=seq(1, ncol(bierbaum), by=10), method="simple", SNR=6)
+cardinal.peaklist <- peakPick(cardinal.norm, pixel=seq(1, ncol(cardinal), by=10), method="simple", SNR=6)
 
-bierbaum.peaklist <- peakAlign(bierbaum.peaklist, ref=bierbaum.norm, method="diff", units="ppm", diff.max=200)
+cardinal.peaklist <- peakAlign(cardinal.peaklist, ref=cardinal.norm, method="diff", units="ppm", diff.max=200)
 
-bierbaum.peaklist <- peakFilter(bierbaum.peaklist, method="freq", freq.min=ncol(bierbaum.peaklist) / 100)
+cardinal.peaklist <- peakFilter(cardinal.peaklist, method="freq", freq.min=ncol(cardinal.peaklist) / 100)
 
-bierbaum.peaks <- reduceDimension(bierbaum.norm, ref=bierbaum.peaklist, type="height")
+cardinal.peaks <- reduceDimension(cardinal.norm, ref=cardinal.peaklist, type="height")
 @
 
 
@@ -748,41 +748,41 @@ Next we perform spatial shrunken centroids clustering on the dataset, with both 
 
 <<eval=FALSE>>=
 set.seed(1)
-bierbaum.sscg <- spatialShrunkenCentroids(bierbaum.peaks, r=c(1,2), k=c(10,15), s=c(0,3,6,9), method="gaussian")
+cardinal.sscg <- spatialShrunkenCentroids(cardinal.peaks, r=c(1,2), k=c(10,15), s=c(0,3,6,9), method="gaussian")
 
 set.seed(1)
-bierbaum.ssca <- spatialShrunkenCentroids(bierbaum.peaks, r=c(1,2), k=c(10,15), s=c(0,3,6,9), method="adaptive")
+cardinal.ssca <- spatialShrunkenCentroids(cardinal.peaks, r=c(1,2), k=c(10,15), s=c(0,3,6,9), method="adaptive")
 @
 
 
-As in \secref{numberofsegments}, we plot the predicted number of classes against the shrinkage parameter $s$ to help determine the most appropriate model parameters for the data. \figref{bierbaumchooseg} shows this plot for the segmentations with Gaussian weights, and \figref{bierbaumchoosea} shows this for adaptive weights.
+As in \secref{numberofsegments}, we plot the predicted number of classes against the shrinkage parameter $s$ to help determine the most appropriate model parameters for the data. \figref{cardinalchooseg} shows this plot for the segmentations with Gaussian weights, and \figref{cardinalchoosea} shows this for adaptive weights.
 
-<<bierbaumchooseg>>=
-plot(summary(bierbaum.sscg))
+<<cardinalchooseg>>=
+plot(summary(cardinal.sscg))
 @
 
-<<bierbaumchoosea>>=
-plot(summary(bierbaum.ssca))
+<<cardinalchoosea>>=
+plot(summary(cardinal.ssca))
 @
 
 For adaptive weights, the predicted number of segments quickly converge at $s = 3$, while the same does not happen for Gaussian weights until $s = 9$. This is likely because adaptive weights are more appropriate for this dataset, in order to fit the thin ``DESI-MS'' writing below the cardinal.
 
-We plot the segmentation for $r = 1, k = 10, s = 3$, resulting in 8 segments, shown in \figref{bierbaumsscg}.
+We plot the segmentation for $r = 1, k = 10, s = 3$, resulting in 8 segments, shown in \figref{cardinalsscg}.
 
 
-<<bierbaumsscg, eval=FALSE>>=
+<<cardinalsscg, eval=FALSE>>=
 mycol <- c("#5C605C", "#4D2C36", "#A1A1A1", "#999999", "#B02020", "#1B1B1B", "#901010", "#906565")
 
-image(bierbaum.sscg, model=list(r=1, k=10, s=3), key=FALSE, col=mycol)
+image(cardinal.sscg, model=list(r=1, k=10, s=3), key=FALSE, col=mycol)
 @
 
-We also plot the segmentation for $r = 2, k = 10, s = 3$, resulting in 8 segments, shown in \figref{bierbaumssca}.
+We also plot the segmentation for $r = 2, k = 10, s = 3$, resulting in 8 segments, shown in \figref{cardinalssca}.
 
 
-<<bierbaumssca, eval=FALSE>>=
+<<cardinalssca, eval=FALSE>>=
 mycol <- c("#1B1B1B", "#A1A1A1", "#906565", "#999999", "#B02020", "#901010", "#5C605C", "#4D2C36")
 
-image(bierbaum.ssca, model=list(r=2, k=10, s=3), key=FALSE, col=mycol)
+image(cardinal.ssca, model=list(r=2, k=10, s=3), key=FALSE, col=mycol)
 @
 
 
@@ -791,41 +791,41 @@ image(bierbaum.ssca, model=list(r=2, k=10, s=3), key=FALSE, col=mycol)
 \centering
 \begin{subfigure}{.3\textwidth}
   \centering
-\includegraphics{bierbaum-optical.png}
+\includegraphics{cardinal-optical.png}
 \caption{\small Cardinal painting}
-\label{fig:bierbaumoptical}
+\label{fig:cardinaloptical}
 \end{subfigure}
 \begin{subfigure}{.3\textwidth}
   \centering
 <<fig=TRUE, echo=FALSE>>=
-<<bierbaumsscg>>
+<<cardinalsscg>>
 @
 \caption{\small Segmentation for $r = 1, k = 10, s = 3$ with Gaussian weights}
-\label{fig:bierbaumsscg}
+\label{fig:cardinalsscg}
 \end{subfigure}
 \begin{subfigure}{.3\textwidth}
   \centering
 <<fig=TRUE, echo=FALSE>>=
-<<bierbaumssca>>
+<<cardinalssca>>
 @
 \caption{\small Segmentation for $r = 2, k = 10, s = 3$ with adaptive weights}
-\label{fig:bierbaumssca}
+\label{fig:cardinalssca}
 \end{subfigure}
 \begin{subfigure}{.3\textwidth}
   \centering
 <<fig=TRUE, echo=FALSE>>=
-<<bierbaumchooseg>>
+<<cardinalchooseg>>
 @
 \caption{\small Selecting the number of segments for Gaussian weights}
-\label{fig:bierbaumchooseg}
+\label{fig:cardinalchooseg}
 \end{subfigure}
 \begin{subfigure}{.3\textwidth}
   \centering
 <<fig=TRUE, echo=FALSE>>=
-<<bierbaumchoosea>>
+<<cardinalchoosea>>
 @
 \caption{\small Selecting the number of segments for adaptive weights}
-\label{fig:bierbaumchoosea}
+\label{fig:cardinalchoosea}
 \end{subfigure}
 \caption{\small Spatial segmentation of the cardinal painting for both Gaussian and adaptive weights, and the plots for selecting the number of segments.}
 \end{figure}
@@ -839,8 +839,8 @@ We note that the segmentation matches up well against the original painting, so 
 
 
 % <<eval=FALSE, echo=FALSE>>=
-% save(bierbaum, bierbaum.peaklist, bierbaum.peaks, file="~/Documents/Developer/Projects/CardinalWorkflows/data/bierbaum.rda", compress="xz")
-% save(bierbaum.sscg, bierbaum.ssca, file="~/Documents/Developer/Projects/CardinalWorkflows/data/bierbaum_analyses.rda", compress="xz")
+% save(cardinal, cardinal.peaklist, cardinal.peaks, file="~/Documents/Developer/Projects/CardinalWorkflows/data/cardinal.rda", compress="xz")
+% save(cardinal.sscg, cardinal.ssca, file="~/Documents/Developer/Projects/CardinalWorkflows/data/cardinal_analyses.rda", compress="xz")
 % @
 
 
@@ -848,117 +848,117 @@ We note that the segmentation matches up well against the original painting, so 
 
 
 
-\subsection{Evaluation using a farmhouse painting}
+% \subsection{Evaluation using a farmhouse painting}
 
 
-Now we perform the same analysis on a different painting. This time, we analyze a painting of a farmhouse, also collected using DESI imaging.
+% Now we perform the same analysis on a different painting. This time, we analyze a painting of a farmhouse, also collected using DESI imaging.
 
-<<eval=TRUE>>=
-data(farmhouse, farmhouse_analyses)
-@
+% <<eval=TRUE>>=
+% data(farmhouse, farmhouse_analyses)
+% @
 
-We normalize the mass spectra.
+% We normalize the mass spectra.
 
-<<eval=FALSE>>=
-farmhouse.norm <- normalize(farmhouse, method="tic")
-@
+% <<eval=FALSE>>=
+% farmhouse.norm <- normalize(farmhouse, method="tic")
+% @
 
-We perform peak-picking and alignment.
+% We perform peak-picking and alignment.
 
-<<eval=FALSE>>=
-farmhouse.peaklist <- peakPick(farmhouse.norm, pixel=seq(1, ncol(farmhouse), by=10), method="simple", SNR=6)
+% <<eval=FALSE>>=
+% farmhouse.peaklist <- peakPick(farmhouse.norm, pixel=seq(1, ncol(farmhouse), by=10), method="simple", SNR=6)
 
-farmhouse.peaklist <- peakAlign(farmhouse.peaklist, ref=farmhouse.norm, method="diff", units="ppm", diff.max=200)
+% farmhouse.peaklist <- peakAlign(farmhouse.peaklist, ref=farmhouse.norm, method="diff", units="ppm", diff.max=200)
 
-farmhouse.peaklist <- peakFilter(farmhouse.peaklist, method="freq", freq.min=ncol(farmhouse.peaklist) / 100)
+% farmhouse.peaklist <- peakFilter(farmhouse.peaklist, method="freq", freq.min=ncol(farmhouse.peaklist) / 100)
 
-farmhouse.peaks <- reduceDimension(farmhouse.norm, ref=farmhouse.peaklist, type="height")
-@
+% farmhouse.peaks <- reduceDimension(farmhouse.norm, ref=farmhouse.peaklist, type="height")
+% @
 
-We perform spatial shrunken centroids clustering with both Gaussian and adaptive weights.
-
-
-<<eval=FALSE>>=
-set.seed(1)
-farmhouse.sscg <- spatialShrunkenCentroids(farmhouse.peaks, r=c(1,2), k=c(10, 15), s=c(0,3,6,9), method="gaussian")
-
-set.seed(1)
-farmhouse.ssca <- spatialShrunkenCentroids(farmhouse.peaks, r=c(1,2), k=c(10, 15), s=c(0,3,6,9), method="adaptive")
-@
+% We perform spatial shrunken centroids clustering with both Gaussian and adaptive weights.
 
 
-We plot the number of segments against the shrinkage parameter, with the plot for Gaussian weights shown in \figref{farmhousechooseg} and the plot for adaptive weights shown in \figref{farmhousechoosea}.
+% <<eval=FALSE>>=
+% set.seed(1)
+% farmhouse.sscg <- spatialShrunkenCentroids(farmhouse.peaks, r=c(1,2), k=c(10, 15), s=c(0,3,6,9), method="gaussian")
+
+% set.seed(1)
+% farmhouse.ssca <- spatialShrunkenCentroids(farmhouse.peaks, r=c(1,2), k=c(10, 15), s=c(0,3,6,9), method="adaptive")
+% @
 
 
-<<farmhousechooseg>>=
-plot(summary(farmhouse.sscg))
-@
+% We plot the number of segments against the shrinkage parameter, with the plot for Gaussian weights shown in \figref{farmhousechooseg} and the plot for adaptive weights shown in \figref{farmhousechoosea}.
 
-<<farmhousechoosea>>=
-plot(summary(farmhouse.ssca))
-@
 
-For Gaussian weights, shown in \figref{farmhousechooseg}, the predicted number of segments quickly converge for $r = 1$ at $s = 3$, and more slowly for $r = 2$ at $s = 6$. As with the cardinal painting, this likely reflects the tendency for Gaussian weights to oversmooth at edges and around thin features. Therefore, we plot the segmentation for $r = 1, k = 10, s = 3$, resulting in 9 segments, shown in \figref{farmhousesscg}.
+% <<farmhousechooseg>>=
+% plot(summary(farmhouse.sscg))
+% @
 
-<<farmhousesscg, eval=FALSE>>=
-mycol <- c("#203EF6", "#503525", "#707020", "#301010", "#CC1515", "#2F6010", "#999999", "#DCE3E9", "#AD7C40")
+% <<farmhousechoosea>>=
+% plot(summary(farmhouse.ssca))
+% @
 
-image(farmhouse.sscg, model=list(r=1, k=10, s=3), key=FALSE, col=mycol)
-@
+% For Gaussian weights, shown in \figref{farmhousechooseg}, the predicted number of segments quickly converge for $r = 1$ at $s = 3$, and more slowly for $r = 2$ at $s = 6$. As with the cardinal painting, this likely reflects the tendency for Gaussian weights to oversmooth at edges and around thin features. Therefore, we plot the segmentation for $r = 1, k = 10, s = 3$, resulting in 9 segments, shown in \figref{farmhousesscg}.
 
-For adaptive weights, shown in \figref{farmhousechoosea}, the predicted number of segments are already converged at $s = 0$ for $r = 2$, with 10 segments for both $k = 10$ and $k = 15$. To more easily compare with the segmentation using Gaussian weights, we plot the segmentation for $r = 2, k = 10, s = 3$ as shown in \figref{farmhousessca}.
+% <<farmhousesscg, eval=FALSE>>=
+% mycol <- c("#203EF6", "#503525", "#707020", "#301010", "#CC1515", "#2F6010", "#999999", "#DCE3E9", "#AD7C40")
 
-<<farmhousessca, eval=FALSE>>=
-mycol <- c("#203EF6", "#503525", "#707020", "#2F6010", "#AD7C40", "#CC1515", "#999999", "#DCE3E9", "#301010", "#301010")
+% image(farmhouse.sscg, model=list(r=1, k=10, s=3), key=FALSE, col=mycol)
+% @
 
-image(farmhouse.ssca, model=list(r=2, k=10, s=3), key=FALSE, col=mycol)
-@
+% For adaptive weights, shown in \figref{farmhousechoosea}, the predicted number of segments are already converged at $s = 0$ for $r = 2$, with 10 segments for both $k = 10$ and $k = 15$. To more easily compare with the segmentation using Gaussian weights, we plot the segmentation for $r = 2, k = 10, s = 3$ as shown in \figref{farmhousessca}.
 
-\setkeys{Gin}{width=\textwidth}
-\begin{figure}[h]
-\centering
-\begin{subfigure}{.3\textwidth}
-  \centering
-\includegraphics{farmhouse-optical.png}
-\caption{\small Cardinal painting}
-\label{fig:farmhouseoptical}
-\end{subfigure}
-\begin{subfigure}{.3\textwidth}
-  \centering
-<<fig=TRUE, echo=FALSE>>=
-<<farmhousesscg>>
-@
-\caption{\small Segmentation for $r = 1, k = 10, s = 3$ with Gaussian weights}
-\label{fig:farmhousesscg}
-\end{subfigure}
-\begin{subfigure}{.3\textwidth}
-  \centering
-<<fig=TRUE, echo=FALSE>>=
-<<farmhousessca>>
-@
-\caption{\small Segmentation for $r = 2, k = 10, s = 3$ with adaptive weights}
-\label{fig:farmhousessca}
-\end{subfigure}
-\begin{subfigure}{.3\textwidth}
-  \centering
-<<fig=TRUE, echo=FALSE>>=
-<<farmhousechooseg>>
-@
-\caption{\small Selecting the number of segments for Gaussian weights}
-\label{fig:farmhousechooseg}
-\end{subfigure}
-\begin{subfigure}{.3\textwidth}
-  \centering
-<<fig=TRUE, echo=FALSE>>=
-<<farmhousechoosea>>
-@
-\caption{\small Selecting the number of segments for adaptive weights}
-\label{fig:farmhousechoosea}
-\end{subfigure}
-\caption{\small Spatial segmentation of the farmhouse painting for both Gaussian and adaptive weights, and the plots for selecting the number of segments.}
-\end{figure}
+% <<farmhousessca, eval=FALSE>>=
+% mycol <- c("#203EF6", "#503525", "#707020", "#2F6010", "#AD7C40", "#CC1515", "#999999", "#DCE3E9", "#301010", "#301010")
 
-This painting is more complex than the cardinal painting, so it is more difficult to reconstruct through spatial segmentation. Still, many of the features of the painting can be found in the segmentations, such as the red farmhouses, the tree, the blue sky, and the white fence. However, more complex regions with mixed colors -- such as the roofs, the leaves, and windmill -- show less accuracy. Overall, the segmentation strongly reflects the original painting.
+% image(farmhouse.ssca, model=list(r=2, k=10, s=3), key=FALSE, col=mycol)
+% @
+
+% \setkeys{Gin}{width=\textwidth}
+% \begin{figure}[h]
+% \centering
+% \begin{subfigure}{.3\textwidth}
+%   \centering
+% \includegraphics{farmhouse-optical.png}
+% \caption{\small Cardinal painting}
+% \label{fig:farmhouseoptical}
+% \end{subfigure}
+% \begin{subfigure}{.3\textwidth}
+%   \centering
+% <<fig=TRUE, echo=FALSE>>=
+% <<farmhousesscg>>
+% @
+% \caption{\small Segmentation for $r = 1, k = 10, s = 3$ with Gaussian weights}
+% \label{fig:farmhousesscg}
+% \end{subfigure}
+% \begin{subfigure}{.3\textwidth}
+%   \centering
+% <<fig=TRUE, echo=FALSE>>=
+% <<farmhousessca>>
+% @
+% \caption{\small Segmentation for $r = 2, k = 10, s = 3$ with adaptive weights}
+% \label{fig:farmhousessca}
+% \end{subfigure}
+% \begin{subfigure}{.3\textwidth}
+%   \centering
+% <<fig=TRUE, echo=FALSE>>=
+% <<farmhousechooseg>>
+% @
+% \caption{\small Selecting the number of segments for Gaussian weights}
+% \label{fig:farmhousechooseg}
+% \end{subfigure}
+% \begin{subfigure}{.3\textwidth}
+%   \centering
+% <<fig=TRUE, echo=FALSE>>=
+% <<farmhousechoosea>>
+% @
+% \caption{\small Selecting the number of segments for adaptive weights}
+% \label{fig:farmhousechoosea}
+% \end{subfigure}
+% \caption{\small Spatial segmentation of the farmhouse painting for both Gaussian and adaptive weights, and the plots for selecting the number of segments.}
+% \end{figure}
+
+% This painting is more complex than the cardinal painting, so it is more difficult to reconstruct through spatial segmentation. Still, many of the features of the painting can be found in the segmentations, such as the red farmhouses, the tree, the blue sky, and the white fence. However, more complex regions with mixed colors -- such as the roofs, the leaves, and windmill -- show less accuracy. Overall, the segmentation strongly reflects the original painting.
 
 
 % <<eval=FALSE, echo=FALSE>>=
