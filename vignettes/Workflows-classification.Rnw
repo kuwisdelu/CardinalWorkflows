@@ -1,0 +1,819 @@
+
+%\VignetteIndexEntry{Classification example workflow}
+%\VignetteKeyword{ExperimentData, MassSpectrometryData, ImagingMassSpectrometry, Classification}
+
+\documentclass[a4paper]{article}
+\usepackage{caption}
+\usepackage{subcaption}
+
+\def\todo#1{{\color{red}[TODO: #1]}}
+\def\note#1{{\color{red}[From OV to everyone: #1]}}
+\def\forKyle#1{{\color{blue}[4Kyle: #1]}}
+\def\fromKyle#1{{\color{green}[From Kyle: #1]}}
+\def\forApril#1{{\color{cyan}[4April: #1]}}
+\def\fromApril#1{{\color{magenta}[From April: #1]}}
+
+\def\figref#1{{Figure~\ref{fig:#1}}}
+\def\secref#1{{Section~\ref{sec:#1}}}
+
+<<style, eval=TRUE, echo=FALSE, results=tex>>=
+BiocStyle::latex()
+@
+
+\title{Supervised analysis of MS images using Cardinal}
+
+\author{Kyle D. Bemis and April Harry}
+
+\begin{document}
+\SweaveOpts{concordance=TRUE, keep.source=FALSE, cache=FALSE}
+% Set cache = FALSE when making big change or when done
+
+\maketitle
+
+\tableofcontents
+
+<<eval=TRUE, echo=FALSE, results=hide>>=
+library(Cardinal)
+options(Cardinal.verbose=FALSE)
+options(Cardinal.progress=FALSE)
+options(width=100)
+@
+
+\section{Introduction}
+
+For experiments in which analyzed samples come from different classes or conditions, a common goal of supervised analysis is to predict the class of a new sample, given a labeled training set for which classes are already known. This task is called classification.
+
+Unlike unsupervised analysis such as clustering, classification requires biological replicates for testing and validation, to avoid biased reporting of accuracy. \Rpackage{Cardinal} implements cross-validation for classification.
+
+In this vignette, an example classification workflow in \Rpackage{Cardinal} is presented, together with plots of the results.
+
+\section{Analysis of a renal cell carcinoma (RCC) cancer dataset}
+
+\label{sec:rcc}
+
+This example uses a renal cell carcinoma (RCC) cancer dataset consisting of 8 matched pairs of human kidney tissue. Each tissue pair consists of a normal tissue sample and a cancerous tissue sample. The goal of the workflow is to develop classifiers for predicting whether a new tissue sample is normal or cancer.
+
+<<eval=TRUE>>=
+library(CardinalWorkflows)
+data(rcc, rcc_analyses)
+@
+
+In this RCC dataset, we expect that normal tissue and cancerous tissue will have unique chemical profiles, which we can use to classify new tissue based on the mass spectra.
+
+In \figref{opticalandionimages} we show the H\&E stained tissue samples. In \figref{ionimages810} we plot the ion images for $m/z$ 810.5, which we know from previous studies to be abundant in approximately equal intensities in both cancerous and normal tissue \cite{Dill}.
+
+<<ionimages810, eval=FALSE>>=
+image(rcc, mz=810.5, normalize.image="linear", contrast.enhance="histogram", smooth.image="gaussian", layout=c(4,2))
+@
+
+\setkeys{Gin}{width=\textwidth}
+\begin{figure}[h]
+\centering
+\begin{subfigure}{.225\textwidth}
+  \centering
+\includegraphics{rcc-MH0204_33.png}
+\caption{\small MH0204\_33}
+\label{fig:mh0204optical}
+\end{subfigure}
+\begin{subfigure}{.225\textwidth}
+  \centering
+\includegraphics{rcc-UH0505_12.png}
+\caption{\small UH0505\_12}
+\label{fig:uh0505optical}
+\end{subfigure}
+\begin{subfigure}{.225\textwidth}
+  \centering
+\includegraphics{rcc-UH0710_33.png}
+\caption{\small UH0710\_33}
+\label{fig:uh0710optical}
+\end{subfigure}
+\begin{subfigure}{.225\textwidth}
+  \centering
+\includegraphics{rcc-UH9610_15.png}
+\caption{\small UH9610\_15}
+\label{fig:uh9610optical}
+\end{subfigure}
+\begin{subfigure}{.225\textwidth}
+  \centering
+\includegraphics{rcc-UH9812_03.png}
+\caption{\small UH9812\_03}
+\label{fig:uh9812optical}
+\end{subfigure}
+\begin{subfigure}{.225\textwidth}
+  \centering
+\includegraphics{rcc-UH9905_18.png}
+\caption{\small UH9905\_18}
+\label{fig:uh9905optical}
+\end{subfigure}
+\begin{subfigure}{.225\textwidth}
+  \centering
+\includegraphics{rcc-UH9911_05.png}
+\caption{\small UH9911\_05}
+\label{fig:uh9911optical}
+\end{subfigure}
+\begin{subfigure}{.225\textwidth}
+  \centering
+\includegraphics{rcc-UH9912_01.png}
+\caption{\small UH9912\_01}
+\label{fig:uh9912optical}
+\end{subfigure}
+\begin{subfigure}{.9\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE, height=4, width=8>>=
+<<ionimages810>>
+@
+\caption{\small Corresponding ion images for $m/z$ 810.5}
+\label{fig:ionimages810}
+\end{subfigure}
+\caption{\small Optical images and ion images for the eight samples showing general morphology.}
+\label{fig:opticalandionimages}
+\end{figure}
+
+<<>>=
+summary(rcc)
+@
+
+As can be seen in \figref{opticalandionimages}, each matched pair of tissues belonging to the same subject are on the same slide. Note also the the cancer tissue is on the left and the normal tissue is on the right on each slide.
+
+The image contains 16000 pixels with 10200 spectral features measured at each location (m/z range from 150 to 1000).
+
+
+
+
+
+
+
+\subsection{Pre-processing}
+
+\label{sec:preprocessing}
+
+For statistical analysis, some form of dimension reduction is necessary so that computation times are reasonable. However, the usual form of dimension reduction for mass spectra -- peak-picking -- is often unsuitable for classification. This is because classification requires testing and validation to avoid bias in the reported accuracy.
+
+If we perform peak-picking on the whole dataset, then the accuracy reported for the validation set will be biased, because the selected peaks are also coming from the validation set.
+
+Therefore, we recommend resampling or binning as the preferred method of dimension reduction for classification workflows. We will use resampling.
+
+
+\subsubsection{Normalization}
+
+Before resampling or binning, normalization is necessary to correct for pixel-to-pixel variation. We will use total ion current (TIC) standardization, which is a popular choice for mass spectrometry imaging datasets.
+
+<<eval=FALSE>>=
+rcc.norm <- normalize(rcc, method="tic")
+@
+
+\subsubsection{Resampling to unit resolution}
+
+The normalized data is then resampled to unit resolution. Binning would also be an appropriate alternative, and could be used by setting \verb|method="bin"| in the \verb|reduceDimension| method.
+
+<<eval=FALSE>>=
+rcc.resample <- reduceDimension(rcc.norm, method="resample")
+@
+
+As discussed above, resampling or binning is preferred to peak-picking for classification. However, if peak-picking is preferred, this can be worked around by performing peak-picking separately on the training set \textit{only}, and using the same peaks in the testing and validation sets. This can become a complex procedure if cross-validation is desired, and will not be covered in this vignette.
+
+\subsubsection{Subsetting the dataset}
+
+Lastly, we will subset the dataset to drop pixels that contain only the slide background, so that the final dataset will only consist of mass spectra from actual tissue.
+
+To subset the data, we will use the \Robject{diagnosis} variable stored in the object's \Robject{pixelData}. This variable is a \textit{factor} with the disease condition for each pixel, as annotated by a pathologist.
+
+<<>>=
+summary(rcc$diagnosis)
+@
+
+We drop the 9923 pixels without annotation.
+
+<<eval=FALSE>>=
+rcc.small <- rcc.resample[,rcc$diagnosis %in% c("cancer", "normal")]
+@
+
+<<>>=
+summary(rcc.small)
+@
+
+Now the dataset contains only the 6077 mass spectra we need to train and test a classifier.
+
+
+
+
+
+
+
+
+
+\subsection{Visualizing the dataset}
+
+In this section, we will walk through several visualization methods to explore the dataset before training our classifiers.
+
+\subsubsection{Visualization of single-ion images}
+
+\label{sec:ionimages}
+
+To begin visualizing the dataset, we will plot ion images for $m/z$ values we already know to be useful in distinguishing normal tissue versus cancer.
+
+First, we plot the single-ion images for $m/z$ 215.3, known to be more abundant in normal tissue (right) \cite{Dill}, shown in \figref{ionimages215}.
+
+<<ionimages215, eval=FALSE>>=
+image(rcc, mz=215.3, normalize.image="linear", contrast.enhance="histogram", smooth.image="gaussian", layout=c(4,2))
+@
+
+Likewise, we plot the single ion images for $m/z$ 885.7, known to be more abundant in cancerous tissue (left) \cite{Dill}, shown in \figref{ionimages886}.
+
+<<ionimages886, eval=FALSE>>=
+image(rcc, mz=885.7, normalize.image="linear", contrast.enhance="histogram", smooth.image="gaussian", layout=c(4,2))
+
+@
+
+\setkeys{Gin}{width=\textwidth}
+\begin{figure}[h]
+\centering
+\begin{subfigure}{.9\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE, height=4, width=8>>=
+<<ionimages215>>
+@
+\caption{\small $m/z$ 215.3 (more abundant in normal tissue)}
+\label{fig:ionimages215}
+\end{subfigure}
+\begin{subfigure}{.9\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE, height=4, width=8>>=
+<<ionimages886>>
+@
+\caption{\small $m/z$ 885.7 (more abundant in cancerous tissue)}
+\label{fig:ionimages886}
+\end{subfigure}
+\caption{\small Ion images showing ions associated with normal and cancerous tissue.}
+\end{figure}
+
+From \figref{ionimages215} and \figref{ionimages886}, we note that there is still a great deal of variation in these images for ions that should be associated with a particular disease condition. For example, $m/z$ 215.3 -- which should be more abundant in normal tissue -- is also abundant in cancerous tissue for samples UH0505\_12 and UH9905\_18. This shows that multiple ions will be necessary for classification.
+
+
+
+\subsubsection{Exploratory analysis using PCA}
+
+Although many use principal components analysis (PCA) combined with linear regression for classification, it is a method for unsupervised analysis most appropriately used for exploring a dataset, prior to applying a method designed for classification. We will use PCA for visualization.
+
+Here we fit the first 5 principal components using the \verb|PCA| method.
+
+<<eval=FALSE>>=
+rcc.pca <- PCA(rcc.small, ncomp=5)
+@
+
+<<>>=
+summary(rcc.pca)
+@
+
+The summary of the first 5 principal components show that PCA is not very useful for this dataset, since the first 5 components cumulatively explain approximately only 51\% of the variation in the data.
+
+To further explore the dataset with PCA, we plot images of the scores of the first principal component, shown in \figref{pcaimages}.
+
+<<pcaimages, eval=FALSE>>=
+image(rcc.pca, column="PC1", superpose=FALSE, col.regions=risk.colors(100), layout=c(4,2))
+@
+
+\setkeys{Gin}{width=0.9\textwidth}
+\begin{figure}[h]
+  \centering
+<<fig=TRUE, echo=FALSE, height=4, width=8>>=
+<<pcaimages>>
+@
+\caption{\small PC scores for the first principal component.}
+\label{fig:pcaimages}
+\end{figure}
+
+\figref{pcaimages} show that the images based on the PC1 scores do not seem to show a strong pattern useful for classification of cancer versus normal tissue, although normal tissue seems to have slightly higher PC1 scores.
+
+We also plot the PC loadings for the first 2 principal components, shown in \figref{pcaplots}.
+
+<<pcaloadings, eval=FALSE>>=
+plot(rcc.pca, column=c("PC1", "PC2", "PC3"), superpose=FALSE, layout=c(3,1))
+@
+
+\setkeys{Gin}{width=0.9\textwidth}
+\begin{figure}[h]
+  \centering
+<<fig=TRUE, echo=FALSE, height=2.5, width=8>>=
+<<pcaloadings>>
+@
+\caption{\small PC loadings for the first three principal components.}
+\label{fig:pcaloadings}
+\end{figure}
+
+Another useful PCA plot in a classification setting is to plot the scores of different components against each other, plotting each class separately, which we do below for disease condition.
+
+<<>>=
+pca.normal <- as.data.frame(rcc.pca[[1]]$scores[rcc.small$diagnosis == "normal",])
+pca.cancer <- as.data.frame(rcc.pca[[1]]$scores[rcc.small$diagnosis == "cancer",])
+@
+
+We show PC1 versus PC2 in \figref{pca1versus2}.
+
+<<pca1versus2, eval=FALSE>>=
+plot(PC2 ~ PC1, data=pca.normal, col="blue")
+points(PC2 ~ PC1, data=pca.cancer, col="red")
+legend("top", legend=c("normal", "cancer"), col=c("blue", "red"), pch=1, bg=rgb(1,1,1,0.75))
+@
+
+Now PC1 versus PC3 in \figref{pca1versus3}.
+
+<<pca1versus3, eval=FALSE>>=
+plot(PC3 ~ PC1, data=pca.normal, col="blue")
+points(PC3 ~ PC1, data=pca.cancer, col="red")
+legend("top", legend=c("normal", "cancer"), col=c("blue", "red"), pch=1, bg=rgb(1,1,1,0.75))
+@
+
+And PC2 versus PC3 in \figref{pca2versus3}.
+
+<<pca2versus3, eval=FALSE>>=
+plot(PC3 ~ PC2, data=pca.normal, col="blue")
+points(PC3 ~ PC2, data=pca.cancer, col="red")
+legend("top", legend=c("normal", "cancer"), col=c("blue", "red"), pch=1, bg=rgb(1,1,1,0.75))
+@
+
+\setkeys{Gin}{width=\textwidth}
+\begin{figure}[h]
+\centering
+
+% \begin{subfigure}{.9\textwidth}
+%   \centering
+% <<fig=TRUE, echo=FALSE, height=4, width=8>>=
+% <<pcaimages>>
+% @
+% \caption{\small Images based on the PC scores for the first principal component.}
+% \label{fig:pcaimages}
+% \end{subfigure}
+% \begin{subfigure}{.9\textwidth}
+%   \centering
+% <<fig=TRUE, echo=FALSE, height=2.5, width=8>>=
+% <<pcaloadings>>
+% @
+% \caption{\small PC loadings for the first three principal components}
+% \label{fig:pcaloadings}
+% \end{subfigure}
+
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<pca1versus2>>
+@
+\caption{\small PC1 versus PC2 scores}
+\label{fig:pca1versus2}
+\end{subfigure}
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<pca1versus3>>
+@
+\caption{\small PC1 versus PC3 scores}
+\label{fig:pca1versus3}
+\end{subfigure}
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<pca2versus3>>
+@
+\caption{\small PC2 versus PC3 scores}
+\label{fig:pca2versus3}
+\end{subfigure}
+\caption{\small PCA plots showing PC scores according to disease condition.}
+\label{fig:pcaplots}
+\end{figure}
+
+The PC score plots shown in \figref{pcaplots} show that there is indeed separation between the disease conditions in the data. However, it is often difficult to interpret the complex relationship between PC loadings and how the PC scores relate to condition. Therefore, we will now move on to methods designed for classification.
+
+
+
+
+\subsection{Classification using PLS-DA}
+
+Partial least squares discriminant analysis (PLS-DA) -- also known as projection to latent structures -- is a multivariate method that has been shown to be useful in the classification of MS images \cite{Dill}. We will now demonstrate classification of the RCC dataset using PLS-DA.
+
+Note that although we show PLS-DA prediction on two conditions (normal and cancer), it can also be used for classification on more than two conditions.
+
+
+\subsubsection{Cross-validation with partial least squares}
+
+\label{crossvalidation}
+
+An important step in classification is testing and validation. If the accuracy of a classifier is tested on the same dataset that was used to train the classifier, the reported accuracy will be biased and too optimistic. Therefore, \Rpackage{Cardinal} implements the \verb|cvApply| method, which performs cross-validation for any of the supplied classification methods, including \verb|PLS|.
+
+See \verb|?cvApply| for further details on how to use cross-validation in \Rpackage{Cardinal}.
+
+By default, \verb|cvApply| considers each unique sample (as given by the \Robject{sample} variable in an \Robject{MSImageSet} object's \Robject{pixelData}) as a fold for n-fold cross-validation. In most cases, these should correspond to biological replicates, which is our recommended workflow.
+
+This is the case for the RCC dataset, where each matched pair on a separate slide constitutes a unique sample.
+
+<<>>=
+summary(rcc.small$sample)
+@
+
+Generally, biological replicates should be used to partition the dataset rather than technical replicates or individual pixels. The only exception would be in the case of a sample size of one, in which case there are no biological replicates. However, a sample size of one is a worst case scenario, and biological replicates should always be preferred.
+
+We now perform cross-validation using PLS-DA as our classification method, using from 1 to 15 PLS components.
+
+<<eval=FALSE>>=
+rcc.cv.pls <- cvApply(rcc.small, .y=rcc.small$diagnosis, .fun="PLS", ncomp=1:15)
+@
+
+We plot the cross-validated accuracy to determine the best number of components for prediction, shown in \figref{plsaccuracy}.
+
+<<plsaccuracy, eval=FALSE>>=
+plot(summary(rcc.cv.pls))
+@
+
+As seen in \figref{plsaccuracy}, 10 PLS components produce the best prediction rate, with 96.8\% cross-validated accuracy.
+
+<<>>=
+summary(rcc.cv.pls)$accuracy[["ncomp = 10"]]
+@
+
+\begin{figure}
+\setkeys{Gin}{width=0.3\textwidth}
+\begin{center}
+<<fig=TRUE, echo=FALSE>>=
+<<plsaccuracy>>
+@
+\caption{\small Accuracy of PLS-DA classification for number of components used.}
+\label{fig:plsaccuracy}
+\end{center}
+\end{figure}
+
+\figref{plsaccuracy} tells us that if we wanted to use PLS-DA for prediction on new data, we should train a classifier on this data using 10 PLS components.
+
+Note that \Robject{rcc.cv.pls} is a \Robject{CrossValidated} object, which contains 8 objects in its \Robject{resultData} slot -- one for each cross-validation fold -- each of which is a \Robject{PLS} object containing the results of prediction for that fold.
+
+\Robject{CrossValidated} inherits from \Robject{ResultSet}. See \verb|?ResultSet| for details.
+
+
+
+\subsubsection{Plotting the classified images}
+
+Now we plot the images of the PLS-DA fitted values, to visualize the cross-validated prediction rate, shown in \figref{plsimages}.
+
+
+<<plsimages>>=
+image(rcc.cv.pls, model=list(ncomp=10), layout=c(4,2))
+@
+
+\begin{figure}
+\setkeys{Gin}{width=0.9\textwidth}
+\begin{center}
+<<fig=TRUE, echo=FALSE, height=4, width=8>>=
+<<plsimages>>
+@
+\caption{\small PLS-DA fitted values indicating cancer or normal tissue.}
+\label{fig:plsimages}
+\end{center}
+\end{figure}
+
+For prediction, PLS-DA creates indicator variables (with values 0 or 1) for each condition. The predicted condition is the one with the highest fitted value. (Since the fitted values can fall outside the range 0 to 1, these are not interprettable as probabilities.)
+
+\figref{plsimages} shows the tissues on the left are more predominantly red than blue, indicating that they are predicted to be cancer, which corresponds with the true disease conditions. Since we used cross-validation, the prediction on each matched pair is based only on the data from the other 7 matched pairs of tissue samples.
+
+
+\subsubsection{Plotting and interpretting the coefficients of the $m/z$ values}
+
+To interpret the relative importance of the mass features in the classification, we can look at the PLS coefficients used for prediction. To do this, we re-train a PLS classifier on the full dataset using the optical number of PLS components as indicated by the cross-validation.
+
+<<eval=FALSE>>=
+rcc.pls <- PLS(rcc.small, y=rcc.small$diagnosis, ncomp=10)
+@
+
+Now we plot the PLS coefficients against the $m/z$ values, shown in \figref{plscoef}.
+
+<<plscoef, eval=FALSE>>=
+plot(rcc.pls)
+@
+
+\setkeys{Gin}{width=0.3\textwidth}
+\begin{figure}[h]
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<plscoef>>
+@
+\caption{\small PLS coefficients for cancer and normal.}
+\label{fig:plscoef}
+\end{figure}
+
+
+We can also rank the most important for each condition, based on the PLS coefficients, by using the \verb|topLabels| method.
+
+<<>>=
+topLabels(rcc.pls)
+@
+
+Among the top-ranked $m/z$ values, we see $m/z$ 215 is listed for normal tissue, which we know to be abundant in normal tissue. The top-ranked ion for cancer is $m/z$ 751, which we plot below in \figref{ionimages751}.
+
+<<ionimages751, eval=FALSE>>=
+image(rcc.small, mz=751, layout=c(4,2), normalize.image="linear", contrast.enhance="histogram", smooth.image="gaussian")
+@
+
+\begin{figure}
+\setkeys{Gin}{width=0.9\textwidth}
+\begin{center}
+<<fig=TRUE, echo=FALSE, height=4, width=8>>=
+<<ionimages751>>
+@
+\caption{\small $m/$ 751 (identified by PLS as associated with cancer)}
+\label{fig:ionimages751}
+\end{center}
+\end{figure}
+
+We see from \figref{ionimages751} that $m/z$ 751 is indeed more abundant in the cancer tissue. Although the PLS coefficients are useful for ranking the relative important of $m/z$ values, they are not indicative of statistical significance.
+
+
+
+\subsection{Classification using O-PLS-DA}
+
+Orthogonal partial least squares discriminant analysis (O-PLS-DA) is another multivariate method that can be useful for classification of MS images. It is related to PLS, but it removes from the data a number of PLS components orthogonal to the relationship between the data and condition prior to fitting a 1-component PLS model.
+
+O-PLS-DA can often produce comparable accuracy to PLS-DA, but with more stable and easily interprettable coefficients.
+
+
+\subsubsection{Cross-validation with partial least squares}
+
+We now use cross-validation to fit O-PLS-DA models for the RCC dataset.
+
+<<eval=FALSE>>=
+rcc.cv.opls <- cvApply(rcc.small, .y=rcc.small$diagnosis, .fun="OPLS", ncomp=1:15, keep.Xnew=FALSE)
+@
+
+<<oplsaccuracy, eval=FALSE>>=
+plot(summary(rcc.cv.opls))
+@
+
+As seen in \figref{oplsaccuracy}, 12 O-PLS components produce the best prediction rate, with 95.7\% cross-validated accuracy.
+
+<<>>=
+summary(rcc.cv.pls)$accuracy[["ncomp = 12"]]
+@
+
+\begin{figure}
+\setkeys{Gin}{width=0.3\textwidth}
+\begin{center}
+<<fig=TRUE, echo=FALSE>>=
+<<oplsaccuracy>>
+@
+\caption{\small Accuracy of O-PLS-DA classification for number of components used.}
+\label{fig:oplsaccuracy}
+\end{center}
+\end{figure}
+
+\subsubsection{Plotting the classified images}
+
+As with PLS-DA, we now plot the images for the O-PLS-DA fitted values, to visually show the predictions, shown in \figref{oplsimages}.
+
+<<oplsimages, eval=FALSE>>=
+image(rcc.cv.opls, model=list(ncomp=12), layout=c(4,2))
+@
+
+\begin{figure}
+\setkeys{Gin}{width=0.9\textwidth}
+\begin{center}
+<<fig=TRUE, echo=FALSE, width=8, height=4>>=
+<<oplsimages>>
+@
+\caption{\small O-PLS-DA fitted values indicating cancer or normal tissue.}
+\label{fig:oplsimages}
+\end{center}
+\end{figure}
+
+\figref{oplsimages} shows good quality prediction comparable with PLS-DA.
+
+\subsubsection{Plotting and interpretting the coefficients of the $m/z$ values}
+
+Now we consider the O-PLS coefficients by training a classifier on the full dataset with the optimal number of O-PLS components as shown by cross-validation.
+
+<<eval=FALSE>>=
+rcc.opls <- OPLS(rcc.small, y=rcc.small$diagnosis, ncomp=12,
+	keep.Xnew=FALSE)
+@
+
+And we plot the O-PLS coefficients, as shown in \figref{oplscoef}.
+
+<<oplscoef, eval=FALSE>>=
+plot(rcc.opls)
+@
+
+\setkeys{Gin}{width=0.3\textwidth}
+\begin{figure}[h]
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<oplscoef>>
+@
+\caption{\small O-PLS coefficients for cancer and normal.}
+\label{fig:oplscoef}
+\end{figure}
+
+A comparison of the O-PLS coefficients in \figref{oplscoef} with the PLS coefficients from \figref{plscoef} shows that the O-PLS coefficients appear more stable and should be easier to interpret.
+
+We get the top-ranked $m/z$ values using \verb|topLabels|
+
+<<>>=
+topLabels(rcc.opls)
+@
+
+The O-PLS coefficients rank $m/z$ 886 highly for cancer, which we know to be more abundant in the cancerous tissue. As with the PLS coefficients, the ion at $m/z$ 215, which we know to be more abundant in normal tissue, is also highly ranked for normal.
+
+
+
+
+
+
+
+\subsection{Classification using spatial shrunken centroids}
+
+This section demonstrates the spatial shrunken centroids classification method for statistical analysis we introduce in \Rpackage{Cardinal} in the \verb|spatialShrunkenCentroids| method.
+
+In this method, we adapt the nearest shrunken centroids classifier \cite{Tibshirani2002} with spatial smoothing. This method uses statistical regularization to shrink each condition's mean spectrum toward the global mean spectrum. This shrinkage allows automated feature selection of important masses. It then classifies pixels by comparing their mass spectra to the shrunken mean spectra of each conditions. The spatial smoothing uses weights adapted from spatially-aware clustering \cite{Alexandrov2011}, including Gaussian weights, and adaptive weights that attempt to account for local structure.
+
+The parameters to be explicitly provided in the \verb|spatialShrunkenCentroids| method are:
+
+\begin{itemize}
+  
+  \item $r$: The neighborhood smoothing radius
+  \item $s$: The shrinkage parameter
+
+\end{itemize}
+
+The $s$ parameter is the shrinkage parameter that enforces sparsity. As $s$ increases, fewer mass features ($m/z$ values) will be used by the classifier, and only the informative mass features will be retained. 
+
+For a detailed explanation of the shrinkage parameter $s$, see \cite{Tibshirani2002} and \cite{Tibshirani2003}.
+
+Clustering can also be performed if no response variable $y$ is given, by providing an additional parameter $k$ for the initial number of clusters. See the clustering workflow for details.
+
+\subsubsection{Cross-validation with spatial shrunken centroids}
+
+Now we perform cross-validation with spatial shrunken centroids classification and the \verb|method="gaussian"| weights.
+
+<<eval=FALSE>>=
+rcc.cv.sscg <- cvApply(rcc.small, .y=rcc.small$diagnosis, .fun="spatialShrunkenCentroids", method="gaussian", r=c(1,2,3), s=c(0,4,8,12,16,20,24,28))
+@
+
+And we perform cross-validation with spatial shrunken centroids classification and the \verb|method="adaptive"| weights.
+
+<<eval=FALSE>>=
+rcc.cv.ssca <- cvApply(rcc.small, .y=rcc.small$diagnosis, .fun="spatialShrunkenCentroids", method="adaptive", r=c(1,2,3), s=c(0,4,8,12,16,20,24,28))
+@
+
+Now we plot the cross-validated accuracy for the classifier with Gaussian weights in \figref{sscgaccuracy} and adaptive weights in \figref{sscaaccuracy}.
+
+<<sscgaccuracy, eval=FALSE>>=
+plot(summary(rcc.cv.sscg))
+@
+
+<<sscaaccuracy, eval=FALSE>>=
+plot(summary(rcc.cv.ssca))
+@
+
+\setkeys{Gin}{width=\textwidth}
+\begin{figure}[h]
+\centering
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<sscgaccuracy>>
+@
+\caption{\small Accuracy for Gaussian weights}
+\label{fig:sscgaccuracy}
+\end{subfigure}
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<sscaaccuracy>>
+@
+\caption{\small Accuracy for adaptive weights}
+\label{fig:sscaaccuracy}
+\end{subfigure}
+\caption{\small Plots of accuracy for spatial shrunken centroids, showing highest accuracy for $s = 20$ and $r = 3$.}
+\label{fig:sscaccuracy}
+\end{figure}
+
+As shown in \figref{sscaccuracy}, for both weight types and all smoothing radii $r$, the highest accuracy occurs with a shrinkage parameter $s = 20$, except for the case with adaptive weights and $r = 1$, for which the highest accuracy occurs at $s = 16$. For Gaussian weights with $r = 3, s = 20$, accuracy was 88.8\%.
+
+Note that in general, the accuracy increases with larger smoothing neighborhood radii $r$. This is likely because rather than heterogenous samples with both normal and cancerous cells on the same tissue, each tissue is relatively homogenous with predominantly normal or cancerous cells. Therefore, greater spatial smoothing increases the accuracy, and adaptive weights have no advantage over Gaussian weights. For classification on more heterogenous tissue, adaptive weights may perform better.
+
+
+\subsubsection{Plotting the classified images}
+
+\label{sec:sscimages}
+
+Now we plot the classified images for Gaussian weights in \figref{sscgimages} and adaptive weights in \figref{sscaimages}.
+
+<<sscgimages>>=
+image(rcc.cv.sscg, model=list(r=3, s=20), layout=c(4,2))
+@
+
+<<sscaimages>>=
+image(rcc.cv.ssca, model=list(r=3, s=20), layout=c(4,2))
+@
+
+\setkeys{Gin}{width=\textwidth}
+\begin{figure}[h]
+\centering
+\begin{subfigure}{.9\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE, width=8, height=4>>=
+<<sscgimages>>
+@
+\caption{\small Probabilities for Gaussian weights}
+\label{fig:sscgimages}
+\end{subfigure}
+\begin{subfigure}{.9\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE, width=8, height=4>>=
+<<sscaimages>>
+@
+\caption{\small Probabilities for adaptive weights}
+\label{fig:sscaimages}
+\end{subfigure}
+\caption{\small Predicted probabilities of cancer and normal, with higher opacity for a condition's color indicating higher probability.}
+\end{figure}
+
+Unlike PLS-DA and O-PLS-DA, spatial shrunken centroids produce probabilities of cancer versus normal, which we plot using higher opacity for higher probability. This makes for more interpretable predicted images.
+
+
+\subsubsection{Plotting and interpreting the t-statistics of the $m/z$ values}
+
+A major advantage of spatial shrunken centroids is that it provides t-statistics for each feature for each condition, and it uses statistical regularization to perform automatic feature selection. This allows for easier identification of important $m/z$ values, and a more straightforward and interpretable method of ranking their relative importance.
+
+To inspect the t-statistics of the $m/z$ values, we now train classifiers on the full dataset using the parameters $r = 3, s = 20$.
+
+<<eval=FALSE>>=
+rcc.sscg <- spatialShrunkenCentroids(rcc.small, y=rcc.small$diagnosis, r=3, s=20, method="gaussian")
+
+rcc.ssca <- spatialShrunkenCentroids(rcc.small, y=rcc.small$diagnosis, r=3, s=20, method="adaptive")
+@
+
+Now we plot the t-statistics, shown for Gaussian weights in \figref{sscgtstat} and for adaptive weights in \figref{sscatstat}.
+
+<<sscgtstat>>=
+plot(rcc.sscg, mode="tstatistics", model=list(r=3, s=20))
+@
+
+<<sscatstat>>=
+plot(rcc.ssca, mode="tstatistics", model=list(r=3, s=20))
+@
+
+\setkeys{Gin}{width=\textwidth}
+\begin{figure}[h]
+\centering
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<sscgtstat>>
+@
+\caption{\small Shrunken t-statistics for Gaussian weights}
+\label{fig:sscgtstat}
+\end{subfigure}
+\begin{subfigure}{.3\textwidth}
+  \centering
+<<fig=TRUE, echo=FALSE>>=
+<<sscatstat>>
+@
+\caption{\small Shrunken t-statistics for adaptive weights}
+\label{fig:sscatstat}
+\end{subfigure}
+\caption{\small Predicted probabilities of cancer and normal, with higher opacity for a condition's color indicating higher probability.}
+\end{figure}
+
+As seen in \figref{sscgtstat} and \figref{sscatstat}, only a few $m/z$ values have non-zero t-statistics.
+
+<<>>=
+summary(rcc.sscg)
+summary(rcc.ssca)
+@
+
+In fact, only 40 of 850 mass features are used in the spatial shrunken centroids classifier.
+
+We identify the top-ranked mass features using the \verb|topLabels| method.
+
+<<>>=
+topLabels(rcc.sscg)
+topLabels(rcc.ssca)
+@
+
+Note that the shrunken t-statistics are identical between the Gaussian and adaptive weights, since they are based on the same training data, and the spatial structure is taken into account only for the predicted probabilities.
+
+Spatial shrunken centroids identified $m/z$ 215, $m/z$ 886, and $m/z$ 810, which were also identified by O-PLS-DA, and are all known to be important (as discussed in \secref{ionimages}), as well as $m/z$ 751, which was identified by PLS-DA. Of the three methods, spatial shrunken centroids most reliably selected the $m/z$ values known to be associated with cancer and normal, in addition to selecting potentially informative new $m/z$ values.
+
+
+% <<eval=FALSE, echo=FALSE>>=
+% save(rcc, rcc.resample, rcc.small, file="~/Documents/Developer/Projects/CardinalWorkflows/data/rcc.rda", compress="xz")
+% save(rcc.pca, rcc.cv.pls, rcc.pls, rcc.cv.opls, rcc.opls, rcc.cv.sscg, rcc.cv.ssca, rcc.sscg, rcc.ssca, file="~/Documents/Developer/Projects/CardinalWorkflows/data/rcc_analyses.rda", compress="xz")
+% @
+
+
+
+\section{Session info}
+
+<<results=tex, echo=FALSE>>=
+toLatex(sessionInfo())
+@
+
+% \bibliographystyle{unsrt}
+\bibliography{Workflows}
+
+\end{document}
