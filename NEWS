@@ -1,6 +1,9 @@
 
 NEWS for CardinalWorkflows package
 -------------------------
+Version 0.99.2 [2015-2-15]
+o Bioconductor Release Candidate 3
+o Minor changes to workflows vignettes
 
 Version 0.99.1 [2015-1-12]
 o Bioconductor Release Candidate 2

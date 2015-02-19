@@ -206,19 +206,19 @@ Now the dataset contains only the 6077 mass spectra we need to train and test a 
 
 In this section, we will walk through several visualization methods to explore the dataset before training our classifiers.
 
-\subsubsection{Visualization of single-ion images}
+\subsubsection{Visualization of molecular ion images}
 
 \label{sec:ionimages}
 
 To begin visualizing the dataset, we will plot ion images for $m/z$ values we already know to be useful in distinguishing normal tissue versus cancer.
 
-First, we plot the single-ion images for $m/z$ 215.3, known to be more abundant in normal tissue (right) \cite{Dill}, shown in \figref{ionimages215}.
+First, we plot the ion images for $m/z$ 215.3, known to be more abundant in normal tissue (right) \cite{Dill}, shown in \figref{ionimages215}.
 
 <<ionimages215, eval=FALSE>>=
 image(rcc, mz=215.3, normalize.image="linear", contrast.enhance="histogram", smooth.image="gaussian", layout=c(4,2))
 @
 
-Likewise, we plot the single ion images for $m/z$ 885.7, known to be more abundant in cancerous tissue (left) \cite{Dill}, shown in \figref{ionimages886}.
+Likewise, we plot the ion images for $m/z$ 885.7, known to be more abundant in cancerous tissue (left) \cite{Dill}, shown in \figref{ionimages886}.
 
 <<ionimages886, eval=FALSE>>=
 image(rcc, mz=885.7, normalize.image="linear", contrast.enhance="histogram", smooth.image="gaussian", layout=c(4,2))

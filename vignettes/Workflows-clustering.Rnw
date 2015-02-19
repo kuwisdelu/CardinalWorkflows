@@ -159,7 +159,7 @@ An alternative pre-processing workflow would be to perform peak-picking on all m
 
 In this section, we will walk through several methods for visualizing the dataset before statistical analysis.
 
-\subsubsection{Visualization of single-ion images}
+\subsubsection{Visualization of molecular ion images}
 
 Plotting ion images is the natural first step in exploring a mass spectrometry imaging dataset.
 
@@ -606,7 +606,7 @@ In \figref{sscnumsegments}, we look for the shrinkage parameter $s$ for which th
 Therefore, we choose the segmentation with Gaussian weights with $r = 2, k = 20, r = 6$ for further exploration. This segmentation is plotted with custom colors in \figref{sscchosenseg}.
 
 <<sscchosenseg, eval=FALSE>>=
-mycol <- c("#FD9827", "#42FD24", "#CDFD34", "#1995FC", "#3524FB", "#FC0D1B", "#FC23D9")
+mycol <- c(internal1="#FD9827", back="#42FD24", internal2="#1995FC", brain="#FC23D9", liver="#3524FB", heart="#FC0D1B", bg="#CDFD34")
 image(pig206.sscg, model=list(r=2, k=20, s=6), key=FALSE, col=mycol, main="Selected segmentation")
 @
 
