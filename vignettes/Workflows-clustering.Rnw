@@ -159,7 +159,7 @@ An alternative pre-processing workflow would be to perform peak-picking on all m
 
 In this section, we will walk through several methods for visualizing the dataset before statistical analysis.
 
-\subsubsection{Visualization of ion images}
+\subsubsection{Visualization of molecular ion images}
 
 Plotting ion images is the natural first step in exploring a mass spectrometry imaging dataset.
 

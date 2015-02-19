@@ -206,7 +206,7 @@ Now the dataset contains only the 6077 mass spectra we need to train and test a 
 
 In this section, we will walk through several visualization methods to explore the dataset before training our classifiers.
 
-\subsubsection{Visualization of ion images}
+\subsubsection{Visualization of molecular ion images}
 
 \label{sec:ionimages}
 
