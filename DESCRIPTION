@@ -2,7 +2,7 @@ Package: CardinalWorkflows
 Type: Package
 Title: Datasets and workflows for the Cardinal mass spectrometry
         imaging package
-Version: 1.2.0
+Version: 1.3.0
 Date: 2015-1-12
 Author: Kyle D. Bemis <kbemis@purdue.edu>
 Maintainer: Kyle D. Bemis <kbemis@purdue.edu>
