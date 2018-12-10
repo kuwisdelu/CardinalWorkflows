@@ -1,0 +1,6 @@
+cardinal: cardinal cardinal.peaklist cardinal.peaks
+cardinal_analyses: cardinal.ssca cardinal.sscg
+pig206: pig206 pig206.peaklist pig206.peaks
+pig206_analyses: pig206.pca pig206.skma pig206.skmg pig206.ssca pig206.sscg
+rcc: rcc rcc.resample rcc.small
+rcc_analyses: rcc.cv.opls rcc.cv.pls rcc.cv.ssca rcc.cv.sscg rcc.opls rcc.pca rcc.pls rcc.ssca rcc.sscg

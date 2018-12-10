@@ -22,7 +22,7 @@ BiocStyle::latex()
 
 \title{Supervised analysis of MS images using Cardinal}
 
-\author{Kyle D. Bemis and April Harry}
+\author{Kylie A. Bemis and April Harry}
 
 \begin{document}
 \SweaveOpts{concordance=TRUE, keep.source=FALSE, cache=FALSE}
