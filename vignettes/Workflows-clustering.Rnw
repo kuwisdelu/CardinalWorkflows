@@ -575,19 +575,19 @@ plot(pig206.ssca, mode="tstatistics", model=list(r=2, s=c(0,6)), key=FALSE, layo
 
 Note in \figref{sscgtstat} and \figref{sscatstat} that the segments that disappear as $s$ increases from $s = 0$ to $s = 6$ generally have low t-statistics. These low t-statistics are quickly driven to 0, and their segments are removed from the model and joined with other segments.
 
-The top $m/z$ values for a segmentation can be queried using the \verb|topLabels| method.
+The top $m/z$ values for a segmentation can be queried using the \verb|topFeatures| method.
 
 <<>>=
-topLabels(pig206.sscg, n=20)
+topFeatures(pig206.sscg, n=20)
 @
 
 This list can be filtered by the segment, model parameters, etc.
 
 <<>>=
-topLabels(pig206.sscg, model=list(r=2, s=6, k=20), filter=list(classes=5))
+topFeatures(pig206.sscg, model=list(r=2, s=6, k=20), filter=list(classes=5))
 @
 
-See \verb|?topLabels| for details. This will be explored further in \secref{sscinterpret}.
+See \verb|?topFeatures| for details. This will be explored further in \secref{sscinterpret}.
 
 
 
@@ -650,7 +650,7 @@ summaryPlots <- function(dataset, results, model, segment, name, col) {
   image(results, model=model, key=FALSE, column=segment, main=name, layout=c(3,2), col=col)
   plot(results, model=model, key=FALSE, column=segment, mode="centers", main="Shrunken mean spectrum", col=col)
   plot(results, model=model, key=FALSE, column=segment, mode="tstatistics", main="Shrunken t-statistics", col=col)
-  top <- topLabels(results, n=3, model=model, filter=list(classes=segment))
+  top <- topFeatures(results, n=3, model=model, filter=list(classes=segment))
   image(dataset, mz=top$mz, normalize.image="linear", contrast.enhance="histogram", smooth.image="gaussian")
 }
 @

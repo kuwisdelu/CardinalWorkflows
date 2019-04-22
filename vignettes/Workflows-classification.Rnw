@@ -498,10 +498,10 @@ plot(rcc.pls)
 \end{figure}
 
 
-We can also rank the most important for each condition, based on the PLS coefficients, by using the \verb|topLabels| method.
+We can also rank the most important for each condition, based on the PLS coefficients, by using the \verb|topFeatures| method.
 
 <<>>=
-topLabels(rcc.pls)
+topFeatures(rcc.pls)
 @
 
 Among the top-ranked $m/z$ values, we see $m/z$ 215 is listed for normal tissue, which we know to be abundant in normal tissue. The top-ranked ion for cancer is $m/z$ 751, which we plot below in \figref{ionimages751}.
@@ -609,10 +609,10 @@ plot(rcc.opls)
 
 A comparison of the O-PLS coefficients in \figref{oplscoef} with the PLS coefficients from \figref{plscoef} shows that the O-PLS coefficients appear more stable and should be easier to interpret.
 
-We get the top-ranked $m/z$ values using \verb|topLabels|
+We get the top-ranked $m/z$ values using \verb|topFeatures|
 
 <<>>=
-topLabels(rcc.opls)
+topFeatures(rcc.opls)
 @
 
 The O-PLS coefficients rank $m/z$ 886 highly for cancer, which we know to be more abundant in the cancerous tissue. As with the PLS coefficients, the ion at $m/z$ 215, which we know to be more abundant in normal tissue, is also highly ranked for normal.
@@ -788,11 +788,11 @@ summary(rcc.ssca)
 
 In fact, only 40 of 850 mass features are used in the spatial shrunken centroids classifier.
 
-We identify the top-ranked mass features using the \verb|topLabels| method.
+We identify the top-ranked mass features using the \verb|topFeatures| method.
 
 <<>>=
-topLabels(rcc.sscg)
-topLabels(rcc.ssca)
+topFeatures(rcc.sscg)
+topFeatures(rcc.ssca)
 @
 
 Note that the shrunken t-statistics are identical between the Gaussian and adaptive weights, since they are based on the same training data, and the spatial structure is taken into account only for the predicted probabilities.
