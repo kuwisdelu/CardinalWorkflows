@@ -1,0 +1,248 @@
+---
+title: "Class comparison for MSI experiments with Cardinal"
+author: "Dan Guo"
+date: "Revised: October 27, 2019"
+output:
+  BiocStyle::html_document:
+  toc: true
+vignette: >
+  %\VignetteIndexEntry{3. Class comparision: Statistical testing workflow}
+  %\VignetteKeyword{ExperimentData, MassSpectrometryData, ImagingMassSpectrometry, Regression}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+  
+```{r style, echo=FALSE, results='asis'}
+BiocStyle::markdown()
+```
+
+```{r setup, echo=FALSE, message=FALSE}
+library(CardinalWorkflows)
+register(SerialParam())
+options(Cardinal.verbose=FALSE)
+options(Cardinal.progress=FALSE)
+RNGkind("L'Ecuyer-CMRG")
+```
+
+# Introduction 
+
+For experiments in which analyzed samples come from different classes or conditions, a common goal of statistical analysis is class comparison via hypothesis testing.
+
+Statistical testing is performed to find peaks that are differentially abundant among different classes or conditions.
+
+Valid statistical testing requires biological replicates in order to compare between different conditions. It should never be performed with less than 3 samples per condition.
+
+In this vignette, we present an example class comparison workflow using *Cardinal*.
+
+We begin by loading the package:
+
+```{r library}
+library(Cardinal)
+```
+
+# Statistical testing for a renal cell carcinoma (RCC) cancer dataset
+
+This example uses DESI spectra collected from a renal cell carcinoma (RCC) cancer dataset consisting of 8 matched pairs of human kidney tissue. Each tissue pair consists of a normal tissue sample and a cancerous tissue sample.
+
+MH0204_33 | UH0505_12 | UH0710_33 | UH9610_15
+--------- | --------- | --------- | ---------
+![](rcc-MH0204_33.png) | ![](rcc-UH0505_12.png) | ![](rcc-UH0710_33.png) | ![](rcc-UH9610_15.png)
+
+UH9812_03 | UH9905_18 | UH9911_05 | UH9912_01
+--------- | --------- | --------- | ---------
+![](rcc-UH9812_03.png) | ![](rcc-UH9905_18.png) | ![](rcc-UH9911_05.png) | ![](rcc-UH9912_01.png)
+
+For the RCC cancer dataset, the goal is to find m/z features differentially abundant between normal and cancer tissue.
+
+First, we load the dataset from the *CardinalWorkflows* package. The data is stored in an older format, so we need to coerce it to an `MSImagingExperiment`.
+
+```{r load-rcc}
+data(rcc, package="CardinalWorkflows")
+rcc <- as(rcc, "MSImagingExperiment")
+```
+
+The dataset contains 16,000 spectra with 10,200 *m/z*-values.
+
+```{r show-rcc}
+rcc
+```
+
+## Pre-processing
+
+Before fitting any statistical model, pre-processing is necessary to remove noise and the number of *m/z* values.
+
+To process the dataset, we will first perform peak picking on the mean spectrum to create a set of reference peaks. We will then bin the peaks in the entire dataset to this reference.
+
+```{r rcc-mean}
+rcc_mean <- summarize(rcc, .stat="mean")
+```
+
+```{r rcc-peak-process}
+rcc_ref <- rcc_mean %>%
+  peakPick(SNR=3) %>%
+  peakAlign(ref="mean",
+            tolerance=0.5,
+            units="mz") %>%
+  peakFilter() %>%
+  process()
+```
+
+Now we normalize and bin the rest of the dataset to the reference peaks.
+
+```{r rcc-peak-bin}
+rcc_peaks <- rcc %>%
+  normalize(method="tic") %>%
+  peakBin(ref=mz(rcc_ref),
+          tolerance=0.5,
+          units="mz") %>%
+  process()
+
+rcc_peaks
+```
+
+This produces a centroided dataset with 82 peaks.
+
+Rather than rely on the manual region-of-interest selection, we will rely on the fact that cancer tissue is on the left and the normal tissue is on the right on each slide.
+
+```{r rcc-split}
+xcutoff<-c(35, 23, 28, 39, 29, 28, 44, 32)
+
+rcc_peaks$rough_diagnosis <- factor("normal", level=c("cancer", "normal"))
+
+for ( i in 1:nlevels(run(rcc_peaks)) ) {
+  cur_run <- run(rcc_peaks) == runNames(rcc_peaks)[i]
+  pData(rcc_peaks)$rough_diagnosis[cur_run & coord(rcc_peaks)$x < xcutoff[i]] <- "cancer"
+}
+
+rcc_peaks$groups <- interaction(run(rcc_peaks), rcc_peaks$rough_diagnosis)
+```
+
+```{r rcc-check, fig.height=10}
+image(rcc_peaks, mz=810, groups=rough_diagnosis,
+      contrast.enhance="histogram", layout=c(4,2))
+```
+
+
+### Non-specific filtering to reduce data size
+
+In order to reduce the size of the dataset further (because the computation we are working toward can be time consuming), we will perform non-specific filtering.
+
+This means filtering our peaks based on a summary statistic unrelated to the condition. We will use the variance.
+
+```{r rcc-var}
+rcc_var <- summarize(rcc_peaks, .stat="var", .as="DataFrame")
+
+plot(rcc_var, var ~ mz, main="variance")
+```
+
+Now we keep only the peaks above the top 80% quantile of variance among peaks.
+
+```{r rcc-filter}
+rcc_peaks2 <- rcc_peaks[rcc_var$var >= quantile(rcc_var$var, 0.8),]
+```
+
+### Segmentation with spatial Dirichlet Gaussian mixture model (DGMM)
+
+Spatial-DGMM performs peak-specific segmentation. It detects peak-specific tissue segments with homogeneous spatial composition. It can estimate the number of segments and the mean and variance of each segment.
+
+This gives us a useful summary of the spatial distribution of each peak.
+
+```{r dgmm1}
+set.seed(1)
+rcc_dgmm1 <- spatialDGMM(rcc_peaks2[16,], r=1, k=4, groups=1)
+
+summary(rcc_dgmm1)
+```
+
+```{r dgmm1-plot, fig.height=10}
+image(rcc_dgmm1, layout=c(4,2))
+```
+
+This is useful because we can use it to automatically detect segments to compare for statistical testing (e.g., "cancer" vs "normal" tissue). However, to do this without bias, we must make sure the segmentation is performed independently for each sample.
+
+```{r dgmm}
+set.seed(1)
+rcc_dgmm <- spatialDGMM(rcc_peaks2, r=1, k=4, groups=rcc_peaks2$groups)
+
+summary(rcc_dgmm)
+```
+
+
+## Visualization
+
+## Class comparison with means-based testing
+
+As introduced earlier, statistical testing is performed to find peaks differentially abundant among different groups. Since MS imaging produces many hundreds of measurements on the same sample, we can't treat each mass spectrum as a separate observation. Rather, we need to compare entire samples rather than individual pixels.
+
+One way to do this is to summarize each sample by calculating its mean intensity. We can then fit linear models to the means-summarized data.
+
+### Fitting models with means-summarized groups
+
+In *Cardinal*, we can simply use `meansTest()` to do means-based testing in a MS imaging  experiment. We use a one-sided formula to specify the fixed effects (the diagnosis in this particular dataset). The groups indicating the observational units must also be provided. Each group is summarized by its mean, and then a linear model is fit to the summaries.
+
+```{r mtest}
+mtest <- meansTest(rcc_peaks2, ~ rough_diagnosis, groups=rcc_peaks2$groups)
+
+summary(mtest)
+```
+
+The summarized results are automatically adjusted for multiple comparisons using FDR.
+
+### Interpreting the results
+
+We can use the `topFeatures()` method to find differentially abundant peaks.
+
+```{r top-mtest}
+topFeatures(mtest, p.adjust="fdr", AdjP < .1)
+```
+
+But we don't find any.
+
+
+## Class comparison with segmentation-based testing
+
+Means-based testing is fast and simple and can work well for homogeneous samples. However, doesn't use the spatial structure of each peak, so it doesn't take the advantage of MS imaging, and may result in missing differences that actually exist.
+
+Rather than simply average the intensities, we can summarize each sample by segmenting it with spatial-DGMM, and comparing the resulting segments. This gives us a bias-free way to keep the spatial heterogeneous information.
+
+
+### Fitting models with spatial-DGMM-summarized groups
+
+First, we must segment the data with `spatialDGMM()`, while making sure that each observational unit is segmented within a different group (as specified by `groups`). We've already done this. Now we use `segmentationTest()` to fit the models.
+
+In order to fit the models, a representative spatial-DGMM segment must be selected for each group. There are two automated ways to do this via classControl: "Ymax" (default) means use the segments with the highest means, and "Mscore" means use the segments with the highest match scores with the fixed effects.
+
+```{r stest}
+stest <- segmentationTest(rcc_dgmm, ~ rough_diagnosis)
+
+summary(stest)
+```
+
+### Interpreting the results
+
+Again, we can use the `topFeatures()` method to find differentially abundant peaks.
+
+```{r stest-top}
+topFeatures(stest, p.adjust="fdr", AdjP < .1)
+```
+
+This time we find 2 differentially abundant peaks (though one is likely an isotope of the other).
+
+```{r stest-plot}
+plot(stest, model=list(feature=16))
+```
+
+```{r top-image, fig.height=10}
+image(rcc_peaks2, mz=885, layout=c(4,2),
+      contrast.enhance="suppress",
+      normalize.image="linear")
+```
+
+# Session information
+
+```{r session-info}
+sessionInfo()
+```
+
+
+
