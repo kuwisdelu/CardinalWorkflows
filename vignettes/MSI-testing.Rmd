@@ -1,7 +1,7 @@
 ---
 title: "Class comparison for MSI experiments with Cardinal"
 author: "Dan Guo"
-date: "Revised: October 27, 2019"
+date: "Revised: April 21, 2020"
 output:
   BiocStyle::html_document:
   toc: true
@@ -18,9 +18,8 @@ BiocStyle::markdown()
 
 ```{r setup, echo=FALSE, message=FALSE}
 library(CardinalWorkflows)
-register(SerialParam())
-options(Cardinal.verbose=FALSE)
-options(Cardinal.progress=FALSE)
+setCardinalBPPARAM(SerialParam())
+setCardinalVerbose(FALSE)
 RNGkind("L'Ecuyer-CMRG")
 ```
 
@@ -74,7 +73,7 @@ Before fitting any statistical model, pre-processing is necessary to remove nois
 To process the dataset, we will first perform peak picking on the mean spectrum to create a set of reference peaks. We will then bin the peaks in the entire dataset to this reference.
 
 ```{r rcc-mean}
-rcc_mean <- summarize(rcc, .stat="mean")
+rcc_mean <- summarizeFeatures(rcc, "mean")
 ```
 
 ```{r rcc-peak-process}
@@ -130,7 +129,7 @@ In order to reduce the size of the dataset further (because the computation we a
 This means filtering our peaks based on a summary statistic unrelated to the condition. We will use the variance.
 
 ```{r rcc-var}
-rcc_var <- summarize(rcc_peaks, .stat="var", .as="DataFrame")
+rcc_var <- summarizeFeatures(rcc_peaks, "var", as="DataFrame")
 
 plot(rcc_var, var ~ mz, main="variance")
 ```

@@ -1,7 +1,7 @@
 ---
 title: "Classification of MS imaging experiments with Cardinal"
 author: "Kylie Ariel Bemis"
-date: "Revised: October 27, 2019"
+date: "Revised: April 21, 2020"
 output:
   BiocStyle::html_document:
   toc: true
@@ -18,9 +18,8 @@ BiocStyle::markdown()
 
 ```{r setup, echo=FALSE, message=FALSE}
 library(CardinalWorkflows)
-register(SerialParam())
-options(Cardinal.verbose=FALSE)
-options(Cardinal.progress=FALSE)
+setCardinalBPPARAM(SerialParam())
+setCardinalVerbose(FALSE)
 RNGkind("L'Ecuyer-CMRG")
 ```
 
@@ -73,7 +72,7 @@ Then, we normalize the mass spectra to a common TIC.
 
 ```{r normalize-rcc}
 rcc <- rcc %>%
-  select(!is.na(diagnosis)) %>%
+  subsetPixels(!is.na(diagnosis)) %>%
   normalize(method="tic") %>%
   process()
 rcc
@@ -82,7 +81,7 @@ rcc
 To process the dataset, we will first perform peak picking on the mean spectrum to create a set of reference peaks. We will then bin the peaks in the entire dataset to this reference.
 
 ```{r rcc-mean}
-rcc_mean <- summarize(rcc, .stat="mean")
+rcc_mean <- summarizeFeatures(rcc, "mean")
 ```
 
 ```{r rcc-peak-process}

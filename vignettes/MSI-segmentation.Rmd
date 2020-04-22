@@ -1,7 +1,7 @@
 ---
 title: "Segmentation of MS imaging experiments with Cardinal"
 author: "Kylie Ariel Bemis"
-date: "Revised: October 27, 2019"
+date: "Revised: April 21, 2020"
 output:
   BiocStyle::html_document:
   toc: true
@@ -18,9 +18,8 @@ BiocStyle::markdown()
 
 ```{r setup, echo=FALSE, message=FALSE}
 library(CardinalWorkflows)
-register(SerialParam())
-options(Cardinal.verbose=FALSE)
-options(Cardinal.progress=FALSE)
+setCardinalBPPARAM(SerialParam())
+setCardinalVerbose(FALSE)
 RNGkind("L'Ecuyer-CMRG")
 ```
 
@@ -69,10 +68,10 @@ The dataset has been cropped to remove the background slide pixels, leaving only
 
 For statistical analysis, it is useful to reduce the dataset to include only the peaks.
 
-We calculate the mean spectrum using `summarize()`.
+We calculate the mean spectrum using `summarizeFeatures()`.
 
 ```{r pig206-mean}
-pig206_mean <- summarize(pig206, .stat="mean")
+pig206_mean <- summarizeFeatures(pig206, "mean")
 ```
 
 ```{r plot-pig206-mean}
@@ -84,7 +83,7 @@ In order to make the mass spectra comparable between different pixels, it is nec
 Let's calculate the TIC to see how it currently varies across the dataset in the raw, unprocessed specra.
 
 ```{r pig206-tic}
-pig206_tic <- summarize(pig206, .stat=c(tic="sum"), .by="pixel")
+pig206_tic <- summarizePixels(pig206, c(tic="sum"))
 ```
 
 ```{r plot-pig206-tic}
@@ -323,7 +322,7 @@ The dataset includes 12,600 spectra with 10,800 *m/z* values.
 First, we will pre-process the dataset as before, by applying peak picking to the mean spectrum.
 
 ```{r cardinal-mean}
-cardinal_mean <- summarize(cardinal, .stat="mean")
+cardinal_mean <- summarizeFeatures(cardinal, "mean")
 ```
 
 ```{r peak-ref-cardinal}
