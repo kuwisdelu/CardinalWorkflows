@@ -10,7 +10,7 @@ Description: Datasets and workflows for Cardinal: DESI and MALDI
         examples including pig fetus, cardinal painting, and human RCC.
 License: Artistic-2.0
 Depends: R (>= 2.10), Cardinal
-Suggests: BiocStyle, knitr
+Suggests: BiocStyle, knitr, rmarkdown
 VignetteBuilder: knitr
 biocViews: ExperimentData, MassSpectrometryData,
         ImagingMassSpectrometryData
